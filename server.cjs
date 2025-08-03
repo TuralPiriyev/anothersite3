@@ -880,22 +880,24 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
 
       switch (message.type) {
         case 'cursor_update':
-          if (message.cursor && message.cursor.userId) {
-            broadcastMessage = {
-              type: 'cursor_update',
-              data: {
-                userId: message.cursor.userId,
-                username: message.cursor.username || 'Unknown User',
-                position: message.cursor.position || { x: 0, y: 0 },
-                color: message.cursor.color || '#3B82F6',
-                lastSeen: message.cursor.lastSeen || new Date().toISOString(),
-              },
-              timestamp: new Date().toISOString(),
-              schemaId,
-              clientId,
+          if (message.cursor && 
+              typeof message.cursor === 'object' && 
+              message.cursor.userId && 
+              typeof message.cursor.userId === 'string') {
+            
+            const cursorData = {
+              ...message.cursor,
+              timestamp: new Date().toISOString()
             };
+            
+            broadcastToSchema(schemaId, {
+              type: 'cursor_update',
+              data: cursorData
+            }, message.cursor.userId);
+            
+            console.log(`📍 Cursor update from ${message.cursor.username || message.cursor.userId} broadcasted`);
           } else {
-            console.warn(`👥 [${clientId}] Invalid cursor_update message structure:`, message);
+            console.warn('⚠️ Invalid cursor_update message received:', message);
           }
           break;
 
@@ -911,7 +913,7 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
                 id: message.userId,
                 username: message.username,
                 role: message.role || 'editor',
-                color: message.color || '#3B82F6',
+                color: message.cursor.color || '#3B82F6',
               },
               timestamp: new Date().toISOString(),
               schemaId,
