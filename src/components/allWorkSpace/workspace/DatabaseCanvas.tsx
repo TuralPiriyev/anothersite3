@@ -181,7 +181,7 @@ const DatabaseCanvasInner: React.FC<DatabaseCanvasProps> = ({
           collaborationService.sendSchemaChange({
             type: 'relationship_added',
             data: { relationship: newRelationship },
-            userId: 'current_user',
+            userId: collaborationService['currentUser']?.id || 'current_user',
             timestamp: new Date()
           });
         }
@@ -202,7 +202,7 @@ const DatabaseCanvasInner: React.FC<DatabaseCanvasProps> = ({
         collaborationService.sendSchemaChange({
           type: 'table_updated',
           data: { tableId: node.id, updates },
-          userId: 'current_user',
+          userId: collaborationService['currentUser']?.id || 'current_user',
           timestamp: new Date()
         });
       }

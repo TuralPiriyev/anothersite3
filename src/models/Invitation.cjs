@@ -7,6 +7,7 @@ const InvitationSchema = new Schema({
   inviteeUsername: String,
   role: { type: String, enum: ['editor','viewer'] },
   joinCode: String,
+  duration: { type: String, enum: ['1day','1week','1month','permanent'], default: 'permanent' },
   createdAt: Date,
   expiresAt: Date,
   status: { type: String, enum: ['pending','accepted','expired'], default: 'pending' },

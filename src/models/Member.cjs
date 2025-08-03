@@ -7,6 +7,8 @@ const MemberSchema = new Schema({
   username: String,
   role: { type: String, enum: ['owner','editor','viewer'] },
   joinedAt: Date,
+  expiresAt: { type: Date, default: null },
+  invitedBy: String,
   updatedAt: { type: Date, default: Date.now }
 });
 module.exports = mongoose.model('Member', MemberSchema);
@@ -15,3 +17,4 @@ module.exports = mongoose.model('Member', MemberSchema);
 MemberSchema.index({ workspaceId: 1 });
 MemberSchema.index({ username: 1 });
 MemberSchema.index({ role: 1 });
+MemberSchema.index({ expiresAt: 1 });

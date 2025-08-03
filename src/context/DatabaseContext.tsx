@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 // @ts-ignore: module has no type declarations
 import initSqlJs from 'sql.js';
 import { v4 as uuidv4 } from 'uuid';
-import {mongoService} from '../services/mongoService'
+import { mongoService } from '../services/mongoService';
+import { useAuth } from './AuthContext';
 
 export interface Column {
   id: string;
@@ -84,6 +85,8 @@ export interface WorkspaceMember {
   username: string;
   role: 'owner' | 'editor' | 'viewer';
   joinedAt: Date;
+  expiresAt?: Date;
+  invitedBy?: string;
 }
 
 export interface WorkspaceInvitation {
@@ -96,6 +99,7 @@ export interface WorkspaceInvitation {
   createdAt: Date;
   expiresAt: Date;
   status: 'pending' | 'accepted' | 'expired';
+  duration?: '1day' | '1week' | '1month' | 'permanent';
 }
 
 export interface Schema {
@@ -113,6 +117,7 @@ export interface Schema {
   invitations: WorkspaceInvitation[];
   isShared: boolean;
   ownerId: string;
+  ownerUsername: string;
   lastSyncedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -120,6 +125,7 @@ export interface Schema {
 
 export interface DatabaseContextType {
   currentSchema: Schema;
+  setCurrentSchema: React.Dispatch<React.SetStateAction<Schema>>;
   schemas: Schema[];
   sqlEngine: any;
   importSchema: (schema: Schema) => void;
@@ -195,6 +201,8 @@ interface DatabaseProviderProps {
 
 export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) => {
   const [sqlEngine, setSqlEngine] = useState<any>(null);
+  const { user } = useAuth();
+  
   const [currentSchema, setCurrentSchema] = useState<Schema>({
     id: uuidv4(),
     name: 'Untitled Schema',
@@ -209,18 +217,78 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     members: [
       {
         id: uuidv4(),
-        username: 'current_user', // In real app, get from auth context
+        username: user?.username || 'current_user',
         role: 'owner',
         joinedAt: new Date()
       }
     ],
     invitations: [],
     isShared: false,
-    ownerId: 'current_user', // In real app, get from auth context
+    ownerId: user?.id || 'current_user',
+    ownerUsername: user?.username || 'current_user',
     createdAt: new Date(),
     updatedAt: new Date(),
   });
   const [schemas, setSchemas] = useState<Schema[]>([]);
+
+  // Load workspace data from localStorage on mount
+  useEffect(() => {
+    const loadWorkspaceFromStorage = () => {
+      try {
+        const savedWorkspace = localStorage.getItem(`workspace_${currentSchema.id}`);
+        if (savedWorkspace) {
+          const workspaceData = JSON.parse(savedWorkspace);
+          setCurrentSchema(prev => ({
+            ...prev,
+            ...workspaceData,
+            members: workspaceData.members?.map((member: any) => ({
+              ...member,
+              joinedAt: new Date(member.joinedAt),
+              expiresAt: member.expiresAt ? new Date(member.expiresAt) : undefined
+            })) || prev.members,
+            invitations: workspaceData.invitations?.map((inv: any) => ({
+              ...inv,
+              createdAt: new Date(inv.createdAt),
+              expiresAt: new Date(inv.expiresAt)
+            })) || prev.invitations
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to load workspace from storage:', error);
+      }
+    };
+
+    loadWorkspaceFromStorage();
+  }, []);
+
+  // Save workspace data to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(`workspace_${currentSchema.id}`, JSON.stringify(currentSchema));
+    } catch (error) {
+      console.error('Failed to save workspace to storage:', error);
+    }
+  }, [currentSchema]);
+
+  // Clean up expired members periodically
+  useEffect(() => {
+    const cleanupExpiredMembers = () => {
+      const now = new Date();
+      setCurrentSchema(prev => ({
+        ...prev,
+        members: prev.members.filter(member => {
+          if (member.role === 'owner') return true; // Owner never expires
+          if (!member.expiresAt) return true; // Permanent members
+          return member.expiresAt > now; // Check if not expired
+        }),
+        updatedAt: new Date()
+      }));
+    };
+
+    // Check every minute for expired members
+    const interval = setInterval(cleanupExpiredMembers, 60000);
+    return () => clearInterval(interval);
+  }, []);
  
   // Initialize SQL.js
   useEffect(() => {
@@ -303,7 +371,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
   }, []);
 
   const inviteToWorkspace = useCallback(async (
-    invitation: Omit<WorkspaceInvitation, 'id' | 'workspaceId' | 'createdAt' | 'expiresAt' | 'status'| 'joinCode'>
+    invitation: Omit<WorkspaceInvitation, 'id' | 'workspaceId' | 'createdAt' | 'expiresAt' | 'status' | 'joinCode'> & { duration?: '1day' | '1week' | '1month' | 'permanent' }
   ): Promise<string> => {
     console.log('inviteToWorkspace called with:', invitation);
     
@@ -316,14 +384,19 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     
     console.log('Generated join code:', joinCode);
 
+    // Calculate expiration based on duration
+    const now = new Date();
+    let expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Default 24 hours for invitation
+    
     const newInvitation: WorkspaceInvitation = {
       ...invitation,
       id: uuidv4(),
       workspaceId: currentSchema.id,
       joinCode,
       createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-      status: 'pending'
+      expiresAt,
+      status: 'pending',
+      duration: invitation.duration || 'permanent'
     };
     
     console.log('Created invitation object:', newInvitation);
@@ -375,6 +448,23 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         return false;
       }
       
+      // Calculate member expiration based on invitation duration
+      let memberExpiresAt: Date | undefined;
+      if (invitation.duration && invitation.duration !== 'permanent') {
+        const now = new Date();
+        switch (invitation.duration) {
+          case '1day':
+            memberExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            break;
+          case '1week':
+            memberExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            break;
+          case '1month':
+            memberExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            break;
+        }
+      }
+      
       // Update local state - mark invitation as accepted
       setCurrentSchema(prev => ({
         ...prev,
@@ -391,7 +481,9 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         id: uuidv4(),
         username: invitation.inviteeUsername,
         role: invitation.role,
-        joinedAt: new Date()
+        joinedAt: new Date(),
+        expiresAt: memberExpiresAt,
+        invitedBy: invitation.inviterUsername
       };
       
       setCurrentSchema(prev => ({
@@ -400,6 +492,14 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         isShared: true,
         updatedAt: new Date()
       }));
+      
+      // Save to MongoDB
+      try {
+        await mongoService.saveWorkspaceMember(newMember, currentSchema.id);
+        await mongoService.updateInvitationStatus(invitation.id, 'accepted');
+      } catch (error) {
+        console.error('Failed to save to MongoDB:', error);
+      }
       
       console.log('Local state updated successfully');
       return true;
@@ -455,11 +555,33 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
   }, [currentSchema.invitations]);
 
   const removeWorkspaceMember = useCallback((memberId: string) => {
+    const member = currentSchema.members.find(m => m.id === memberId);
+    if (!member) return;
+    
+    // Prevent removing the owner
+    if (member.role === 'owner') {
+      console.error('Cannot remove workspace owner');
+      return;
+    }
+    
+    // Only owner can remove members
+    const currentUser = user?.username || 'current_user';
+    const isOwner = currentSchema.members.find(m => m.username === currentUser && m.role === 'owner');
+    if (!isOwner) {
+      console.error('Only workspace owner can remove members');
+      return;
+    }
+    
     setCurrentSchema(prev => ({
       ...prev,
       members: prev.members.filter(member => member.id !== memberId),
       updatedAt: new Date()
     }));
+    
+    // Remove from MongoDB
+    mongoService.removeWorkspaceMember(currentSchema.id, memberId).catch((error: unknown) => {
+      console.error('Failed to remove member from MongoDB:', error);
+    });
   }, []);
 
   // Enhanced workspace sync with MongoDB
@@ -1069,14 +1191,15 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       members: [
         {
           id: uuidv4(),
-          username: 'current_user', // In real app, get from auth context
+          username: user?.username || 'current_user',
           role: 'owner',
           joinedAt: new Date()
         }
       ],
       invitations: [],
       isShared: false,
-      ownerId: 'current_user', // In real app, get from auth context
+      ownerId: user?.id || 'current_user',
+      ownerUsername: user?.username || 'current_user',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1111,6 +1234,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     currentSchema,
     schemas,
     sqlEngine,
+    setCurrentSchema,
     importSchema,
     addTable,
     removeTable,

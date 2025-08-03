@@ -40,6 +40,9 @@ export default class CollaborationService {
   private eventHandlers: Map<string, Function[]> = new Map();
   public isConnected = false;
   private userJoinSent = false;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
 
   constructor() {
     // All WebSocket operations delegated to SimpleWebSocketService
@@ -49,6 +52,7 @@ export default class CollaborationService {
     this.currentUser = user;
     this.schemaId = schemaId;
     this.userJoinSent = false; // Reset join status
+    this.reconnectAttempts = 0;
     console.log('🔧 CollaborationService initialized:', { user: user.username, schemaId });
   }
 
@@ -75,6 +79,8 @@ export default class CollaborationService {
           onOpen: () => {
             console.log('✅ Collaboration WebSocket connected successfully');
             this.isConnected = true;
+            this.reconnectAttempts = 0;
+            this.startHeartbeat();
             this.emit('connected');
             resolve();
           },
@@ -85,7 +91,9 @@ export default class CollaborationService {
             console.log('❌ Collaboration WebSocket disconnected');
             this.isConnected = false;
             this.userJoinSent = false;
+            this.stopHeartbeat();
             this.emit('disconnected');
+            this.attemptReconnect();
           },
           onError: (error) => {
             console.error('❌ Collaboration WebSocket error:', error);
@@ -102,6 +110,44 @@ export default class CollaborationService {
     });
   }
 
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      if (this.isConnected && this.connectionId) {
+        this.sendMessage({
+          type: 'ping',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 30000); // Send ping every 30 seconds
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  private attemptReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+      
+      console.log(`🔄 Attempting reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+      
+      setTimeout(() => {
+        if (!this.isConnected) {
+          this.connect().catch(error => {
+            console.error('Reconnection failed:', error);
+          });
+        }
+      }, delay);
+    } else {
+      console.error('❌ Max reconnection attempts reached');
+      this.emit('max_reconnect_reached');
+    }
+  }
   private sendUserJoin() {
     if (!this.currentUser || !this.schemaId || this.userJoinSent) return;
     
@@ -169,6 +215,11 @@ export default class CollaborationService {
         this.emit('schema_change', message);
         break;
         
+      case 'workspace_sync':
+        console.log('🔄 Workspace sync received:', message.data);
+        this.emit('workspace_sync', message.data);
+        break;
+        
       case 'user_selection':
         this.emit('user_selection', message.data);
         break;
@@ -232,6 +283,15 @@ export default class CollaborationService {
     });
   }
 
+  sendWorkspaceSync(workspaceData: any) {
+    this.sendMessage({
+      type: 'workspace_sync',
+      data: workspaceData,
+      userId: this.currentUser!.id,
+      username: this.currentUser!.username,
+      timestamp: new Date().toISOString()
+    });
+  }
   sendUserSelection(selection: { tableId?: string; columnId?: string }) {
     this.sendMessage({
       type: 'user_selection',
@@ -307,6 +367,8 @@ export default class CollaborationService {
   disconnect() {
     console.log('🔌 Disconnecting from Collaboration WebSocket');
     
+    this.stopHeartbeat();
+    
     // Send leave message if connected
     if (this.connectionId && this.currentUser && this.isConnected && this.userJoinSent) {
       try {
@@ -328,6 +390,7 @@ export default class CollaborationService {
       }
       this.isConnected = false;
       this.userJoinSent = false;
+      this.reconnectAttempts = 0;
     }, 200);
   }
 

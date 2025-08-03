@@ -59,6 +59,15 @@ const MainLayout: React.FC = () => {
           setIsCollaborationConnected(data.connected);
           break;
           
+        case 'workspace_sync':
+          // Handle complete workspace synchronization
+          if (data && data.schema) {
+            console.log('🔄 Syncing workspace state from remote user');
+            // This would update the current schema with remote changes
+            // For now, just log the sync event
+          }
+          break;
+          
         default:
           // Handle other collaboration events if needed
           break;

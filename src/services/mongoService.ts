@@ -256,6 +256,147 @@ class MongoService {
     }
   }
 
+  async broadcastWorkspaceChange(workspaceId: string, changeType: string, data: any, userId?: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/collaboration/broadcast`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          workspaceId,
+          changeType,
+          data,
+          userId: userId || 'current_user',
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      if (!response.ok) {
+        console.error(`Failed to broadcast workspace change: ${response.status}`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error broadcasting workspace change:', error);
+      return false;
+    }
+  }
+
+  async removeWorkspaceMember(workspaceId: string, memberId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/members/${encodeURIComponent(memberId)}`, {
+        method: 'DELETE',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          workspaceId,
+          removedAt: new Date().toISOString(),
+        }),
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = '/';
+          return false;
+        }
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`Failed to remove workspace member: ${response.status}`, errorData);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error removing workspace member:', error);
+      return false;
+    }
+  }
+
+  async updateMemberExpiration(memberId: string, expiresAt: Date): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/members/${encodeURIComponent(memberId)}/expiration`, {
+        method: 'PUT',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          expiresAt: expiresAt.toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`Failed to update member expiration: ${response.status}`, errorData);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error updating member expiration:', error);
+      return false;
+    }
+  }
+
+  async getWorkspaceState(workspaceId: string): Promise<{ success: boolean; workspace?: any; error?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/workspaces/${encodeURIComponent(workspaceId)}/state`, {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = '/';
+          return { success: false, error: 'Authentication failed' };
+        }
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`Failed to get workspace state: ${response.status}`, errorData);
+        return { success: false, error: errorData.message || 'Failed to get workspace state' };
+      }
+      const workspace = await response.json();
+      return { success: true, workspace };
+    } catch (error) {
+      console.error('Error getting workspace state:', error);
+      return { success: false, error: 'Network error occurred' };
+    }
+  }
+
+  async saveWorkspaceState(workspaceId: string, state: any): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/workspaces/${encodeURIComponent(workspaceId)}/state`, {
+        method: 'PUT',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          state,
+          updatedAt: new Date().toISOString(),
+        }),
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = '/';
+          return false;
+        }
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`Failed to save workspace state: ${response.status}`, errorData);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error saving workspace state:', error);
+      return false;
+    }
+  }
+
+  async cleanupExpiredMembers(workspaceId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/workspaces/${encodeURIComponent(workspaceId)}/cleanup-expired`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          cleanupAt: new Date().toISOString(),
+        }),
+      });
+      if (!response.ok) {
+        console.error(`Failed to cleanup expired members: ${response.status}`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error cleaning up expired members:', error);
+      return false;
+    }
+  }
+
   async checkDatabaseExists(databaseName: string): Promise<{ exists: boolean; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/databases/check`, {
