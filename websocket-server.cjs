@@ -147,38 +147,59 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
           break;
           
         case 'cursor_update':
-          // Validate cursor data before broadcasting
+          // Enhanced validation for cursor data before broadcasting
           if (message.cursor && 
               typeof message.cursor === 'object' && 
               message.cursor.userId && 
-              typeof message.cursor.userId === 'string') {
+              typeof message.cursor.userId === 'string' &&
+              message.cursor.position &&
+              typeof message.cursor.position === 'object' &&
+              typeof message.cursor.position.x === 'number' &&
+              typeof message.cursor.position.y === 'number') {
             
-            // Add timestamp to cursor data
+            // Add timestamp and ensure all required fields
             const cursorData = {
               ...message.cursor,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              username: message.cursor.username || 'Unknown User',
+              color: message.cursor.color || '#3B82F6',
+              lastSeen: new Date().toISOString()
             };
             
-            // Broadcast cursor position to other users
+            // Broadcast cursor position to other users with enhanced data structure
             broadcastToSchema(schemaId, {
               type: 'cursor_update',
               data: cursorData
             }, message.cursor.userId);
             
-            console.log(`📍 Cursor update from ${message.cursor.username || message.cursor.userId} broadcasted`);
+            console.log(`📍 Enhanced cursor update from ${cursorData.username} (${cursorData.userId}) broadcasted to schema ${schemaId}`);
+            console.log(`📍 Cursor position: (${cursorData.position.x}, ${cursorData.position.y})`);
           } else {
             console.warn('⚠️ Invalid cursor_update message received:', {
               hasCursor: !!message.cursor,
               cursorType: typeof message.cursor,
               hasUserId: !!message.cursor?.userId,
               userIdType: typeof message.cursor?.userId,
+              hasPosition: !!message.cursor?.position,
+              positionType: typeof message.cursor?.position,
+              hasValidPosition: !!(message.cursor?.position && 
+                typeof message.cursor.position.x === 'number' && 
+                typeof message.cursor.position.y === 'number'),
               fullMessage: message
             });
             
-            // Send error response to sender only
+            // Send detailed error response to sender only
             ws.send(JSON.stringify({
               type: 'error',
-              message: 'Invalid cursor_update format. Expected cursor object with userId.'
+              message: 'Invalid cursor_update format. Expected cursor object with userId and valid position {x, y}.',
+              details: {
+                required: ['cursor.userId (string)', 'cursor.position.x (number)', 'cursor.position.y (number)'],
+                received: {
+                  hasUserId: !!message.cursor?.userId,
+                  hasPosition: !!message.cursor?.position,
+                  positionKeys: message.cursor?.position ? Object.keys(message.cursor.position) : []
+                }
+              }
             }));
           }
           break;

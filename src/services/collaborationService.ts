@@ -256,19 +256,40 @@ export default class CollaborationService {
       return;
     }
 
+    // Enhanced validation for position data
+    if (!position || 
+        typeof position.x !== 'number' || 
+        typeof position.y !== 'number' ||
+        isNaN(position.x) || 
+        isNaN(position.y)) {
+      console.warn('⚠️ Invalid cursor position data:', position);
+      return;
+    }
+
     const cursorMessage = {
       type: 'cursor_update',
       cursor: {
         userId: this.currentUser.id,
         username: this.currentUser.username,
         role: this.currentUser.role,
-        position,
+        position: {
+          x: Math.round(position.x),
+          y: Math.round(position.y),
+          tableId: position.tableId,
+          columnId: position.columnId
+        },
         color: this.currentUser.color,
-        lastSeen: new Date().toISOString()
+        lastSeen: new Date().toISOString(),
+        schemaId: this.schemaId
       }
     };
 
-    console.log('📍 Sending cursor update:', cursorMessage);
+    console.log('📍 Sending enhanced cursor update:', {
+      userId: cursorMessage.cursor.userId,
+      username: cursorMessage.cursor.username,
+      position: cursorMessage.cursor.position,
+      schemaId: this.schemaId
+    });
     this.sendMessage(cursorMessage);
   }
 
