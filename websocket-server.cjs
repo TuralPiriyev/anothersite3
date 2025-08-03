@@ -33,7 +33,8 @@ function broadcastToSchema(schemaId, message, excludeUserId = null) {
 
   const messageStr = JSON.stringify(message);
   console.log(`📤 Broadcasting to schema ${schemaId}:`, message.type, `(${schemaConnections.size} connections)`);
-  
+  console.log(`📤 Message being sent: ${messageStr}`);
+
   schemaConnections.forEach(ws => {
     if (ws.readyState === 1 && ws.userId !== excludeUserId) { // 1 = OPEN
       try {
