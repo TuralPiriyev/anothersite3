@@ -49,7 +49,7 @@ app.use(
       'http://localhost:5173',
       'http://localhost:3000'
     ],
-    
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     preflightContinue: false,
@@ -841,20 +841,24 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
   const { schemaId } = req.params;
   const clientId = `collab_${schemaId}_${Date.now()}`;
   console.log(`👥 [${clientId}] Collaboration socket opened for schema: ${schemaId}`);
-  
+
   // Store workspace info
   ws.schemaId = schemaId;
   ws.clientId = clientId;
-  
-  ws.send(JSON.stringify({
-    type: 'connection_established',
-    clientId,
-    schemaId,
-    timestamp: new Date().toISOString()
-  }));
-  
+
+  // Send connection established message
+  ws.send(
+    JSON.stringify({
+      type: 'connection_established',
+      clientId,
+      schemaId,
+      timestamp: new Date().toISOString(),
+    })
+  );
+
+  // Heartbeat to keep the connection alive
   const heartbeat = setInterval(() => {
-    if (ws.readyState === 1) {
+    if (ws.readyState === WebSocket.OPEN) {
       try {
         ws.ping();
       } catch (error) {
@@ -865,14 +869,15 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
       console.log(`👥 [${clientId}] WebSocket not ready, clearing heartbeat`);
       clearInterval(heartbeat);
     }
-  }, 60000);
-  
-  ws.on('message', msg => {
+  }, 30000); // 30 seconds
+
+  ws.on('message', (msg) => {
     try {
       const message = JSON.parse(msg.toString());
       console.log(`👥 [${clientId}] Received message:`, message.type, message);
+
       let broadcastMessage = null;
-      
+
       switch (message.type) {
         case 'cursor_update':
           if (message.cursor && message.cursor.userId) {
@@ -883,39 +888,38 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
                 username: message.cursor.username || 'Unknown User',
                 position: message.cursor.position || { x: 0, y: 0 },
                 color: message.cursor.color || '#3B82F6',
-                lastSeen: message.cursor.lastSeen || new Date().toISOString()
+                lastSeen: message.cursor.lastSeen || new Date().toISOString(),
               },
               timestamp: new Date().toISOString(),
               schemaId,
-              clientId
+              clientId,
             };
           } else {
             console.warn(`👥 [${clientId}] Invalid cursor_update message structure:`, message);
           }
           break;
-          
+
         case 'user_join':
           if (message.userId && message.username) {
-            // Store user info on WebSocket connection
             ws.userId = message.userId;
             ws.username = message.username;
             ws.userRole = message.role || 'editor';
-            
+
             broadcastMessage = {
               type: 'user_joined',
               user: {
                 id: message.userId,
                 username: message.username,
                 role: message.role || 'editor',
-                color: message.color || '#3B82F6'
+                color: message.color || '#3B82F6',
               },
               timestamp: new Date().toISOString(),
               schemaId,
-              clientId
+              clientId,
             };
           }
           break;
-          
+
         case 'user_leave':
           if (message.userId) {
             broadcastMessage = {
@@ -923,13 +927,12 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
               userId: message.userId,
               timestamp: new Date().toISOString(),
               schemaId,
-              clientId
+              clientId,
             };
           }
           break;
-          
+
         case 'schema_change':
-          // Enhanced schema change handling with workspace sync
           broadcastMessage = {
             type: 'schema_change',
             changeType: message.changeType,
@@ -938,83 +941,36 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
             username: message.username,
             timestamp: message.timestamp || new Date().toISOString(),
             schemaId,
-            clientId
-          };
-          
-          // Store schema change for persistence
-          console.log(`💾 Storing schema change: ${message.changeType} by ${message.username}`);
-          break;
-          
-        case 'workspace_sync':
-          // Broadcast complete workspace state to all users
-          broadcastMessage = {
-            type: 'workspace_sync',
-            data: message.data,
-            userId: message.userId,
-            username: message.username,
-            timestamp: new Date().toISOString(),
-            schemaId,
-            clientId
+            clientId,
           };
           break;
-          
-        case 'user_selection':
-        case 'presence_update':
-          broadcastMessage = {
-            ...message,
-            timestamp: message.timestamp || new Date().toISOString(),
-            schemaId,
-            clientId
-          };
-          break;
-          
-        case 'ping':
-          ws.send(JSON.stringify({
-            type: 'pong',
-            timestamp: new Date().toISOString(),
-            clientId
-          }));
-          return;
-          
+
         default:
           console.log(`👥 [${clientId}] Unknown message type: ${message.type}`);
-          broadcastMessage = {
-            ...message,
-            timestamp: new Date().toISOString(),
-            schemaId,
-            clientId
-          };
+          break;
       }
-      
+
       if (broadcastMessage) {
         const broadcastData = JSON.stringify(broadcastMessage);
-        let broadcastCount = 0;
-        
-        // Broadcast to all clients in the same schema
-        wsInstance.getWss().clients.forEach(client => {
-          if (client !== ws && 
-              client.readyState === 1 && 
-              client.schemaId === schemaId) {
+        wsInstance.getWss().clients.forEach((client) => {
+          if (client !== ws && client.readyState === WebSocket.OPEN && client.schemaId === schemaId) {
             try {
               client.send(broadcastData);
-              broadcastCount++;
             } catch (error) {
               console.error(`👥 [${clientId}] Failed to broadcast to client:`, error);
             }
           }
         });
-        console.log(`👥 [${clientId}] Broadcasted ${message.type} to ${broadcastCount} clients`);
       }
     } catch (error) {
       console.error(`👥 [${clientId}] Error processing message:`, error);
     }
   });
-  
+
   ws.on('close', (code, reason) => {
     console.log(`👥 [${clientId}] Socket closed - Code: ${code}, Reason: ${reason}`);
     clearInterval(heartbeat);
-    
-    // Broadcast user leave if this was an unexpected disconnect
+
     if (code !== 1000) {
       const leaveMessage = JSON.stringify({
         type: 'user_left',
@@ -1022,14 +978,11 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
         username: ws.username,
         timestamp: new Date().toISOString(),
         schemaId,
-        reason: 'unexpected_disconnect'
+        reason: 'unexpected_disconnect',
       });
-      
-      // Broadcast to other clients in the same schema
-      wsInstance.getWss().clients.forEach(client => {
-        if (client.readyState === 1 && 
-            client.schemaId === schemaId && 
-            client !== ws) {
+
+      wsInstance.getWss().clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN && client.schemaId === schemaId && client !== ws) {
           try {
             client.send(leaveMessage);
           } catch (error) {
@@ -1039,12 +992,12 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
       });
     }
   });
-  
+
   ws.on('error', (error) => {
     console.error(`👥 [${clientId}] Socket error:`, error);
     clearInterval(heartbeat);
   });
-  
+
   ws.on('pong', () => {
     console.log(`👥 [${clientId}] Pong received`);
   });
