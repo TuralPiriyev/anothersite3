@@ -44,21 +44,30 @@ const MainLayout: React.FC = () => {
                 userId: data.userId,
                 username: data.username || 'Unknown User',
                 position: {
-                  x: Math.max(0, Math.min(data.position.x, window.innerWidth)),
-                  y: Math.max(0, Math.min(data.position.y, window.innerHeight))
+                  x: data.position.x, // Don't clamp to screen bounds yet
+                  y: data.position.y
                 },
                 color: data.color || '#3B82F6',
                 selection: data.selection,
                 lastSeen: data.lastSeen || new Date()
               };
               
-              console.log('📍 Adding cursor to MainLayout:', {
-                userId: newCursor.userId,
-                username: newCursor.username,
-                position: newCursor.position
-              });
+              if (import.meta.env.DEV) {
+                console.log('📍 Adding cursor to MainLayout:', {
+                  userId: newCursor.userId,
+                  username: newCursor.username,
+                  position: newCursor.position,
+                  originalData: data
+                });
+              }
               
-              return [...filtered, newCursor];
+              const updatedCursors = [...filtered, newCursor];
+              
+              if (import.meta.env.DEV) {
+                console.log('📍 Updated cursors array:', updatedCursors.length, updatedCursors);
+              }
+              
+              return updatedCursors;
             });
           } else {
             console.warn('⚠️ Invalid cursor data received in MainLayout:', {
