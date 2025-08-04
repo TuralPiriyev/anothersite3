@@ -214,7 +214,16 @@ export default class CollaborationService {
         console.log('🔄 Schema changed:', message.changeType);
         this.emit('schema_change', message);
         break;
-        
+
+      case 'current_users':
+        console.log('👥 Current users list received:', message.users?.length || 0);
+        this.emit('current_users', message.users || []);
+        break;
+
+      case 'schema_sync':
+        console.log('🔄 Full schema sync received');
+        this.emit('schema_sync', message.data);
+        break;
       case 'workspace_sync':
         console.log('🔄 Workspace sync received:', message.data);
         this.emit('workspace_sync', message.data);
