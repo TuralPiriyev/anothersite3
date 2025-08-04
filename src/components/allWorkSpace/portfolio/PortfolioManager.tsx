@@ -93,7 +93,9 @@ const PortfolioManager: React.FC = () => {
 
     // Initialize portfolio WebSocket connection
     const initPortfolioWebSocket = () => {
-      const wsUrl = 'ws://localhost:5000/ws/portfolio-updates';
+      const wsUrl = import.meta.env.DEV
+        ? 'ws://localhost:5000/ws/portfolio-updates'
+        : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/portfolio-updates`;
       
       try {
         const connectionId = simpleWebSocketService.connect(wsUrl, {

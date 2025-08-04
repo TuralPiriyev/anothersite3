@@ -241,6 +241,26 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
           );
         };
 
+        // When we first join we may receive a list of users already online
+        const handleCurrentUsers = (users: CollaborationUser[]) => {
+          if (!Array.isArray(users)) return;
+
+          setCollaborators(prev => {
+            const existingIds = prev.map(c => c.userId);
+            const newcomers = users
+              .filter(u => !existingIds.includes(u.id))
+              .map(u => ({
+                userId: u.id,
+                username: u.username,
+                role: u.role as any,
+                status: 'online' as const,
+                currentAction: 'Working on schema',
+                joinedAt: new Date()
+              }));
+            return [...prev, ...newcomers];
+          });
+        };
+
         const handleError = (error: any) => {
           console.error('❌ Collaboration error:', error);
           setConnectionQuality('poor');
@@ -253,6 +273,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
         collaborationService.on('user_left', handleUserLeft);
         collaborationService.on('cursor_update', handleCursorUpdate);
         collaborationService.on('schema_change', handleSchemaChange);
+        collaborationService.on('current_users', handleCurrentUsers);
         collaborationService.on('error', handleError);
 
         // Connect to collaboration service
@@ -266,6 +287,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
           collaborationService.off('user_left', handleUserLeft);
           collaborationService.off('cursor_update', handleCursorUpdate);
           collaborationService.off('schema_change', handleSchemaChange);
+          collaborationService.off('current_users', handleCurrentUsers);
           collaborationService.off('error', handleError);
           collaborationService.disconnect();
         };

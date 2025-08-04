@@ -75,6 +75,14 @@ function broadcastToSchema(schemaId, message, excludeUserId = null) {
 // it for debugging. This is **not** a durable store – replace with DB in prod.
 const schemaStates = new Map();
 
+// ---------------------------------------------------------------------------
+// Channel specific client maps
+// ---------------------------------------------------------------------------
+
+// Track clients that subscribed to the standalone portfolio-updates channel so
+// we can broadcast only to them and not to every websocket in the process.
+const portfolioClients = new Set();
+
 app.use(
   cors({
     origin: [
@@ -889,6 +897,42 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
     })
   );
 
+  // Immediately let the newcomer know who is already online in this schema
+  const existingUsers = [];
+  wsInstance.getWss().clients.forEach((c) => {
+    if (c !== ws && c.readyState === WebSocket.OPEN && c.schemaId === schemaId && c.userId) {
+      existingUsers.push({
+        id: c.userId,
+        username: c.username || 'Anonymous',
+        role: c.userRole || 'editor',
+        color: c.color || '#3B82F6',
+      });
+    }
+  });
+
+  if (existingUsers.length) {
+    ws.send(
+      JSON.stringify({
+        type: 'current_users',
+        users: existingUsers,
+        schemaId,
+      })
+    );
+  }
+
+  // If we have a cached latest schema for this workspace send it so the user is
+  // immediately up-to-date before granular change events arrive.
+  const latestSchema = schemaStates.get(schemaId);
+  if (latestSchema) {
+    ws.send(
+      JSON.stringify({
+        type: 'schema_sync',
+        data: latestSchema,
+        schemaId,
+      })
+    );
+  }
+
   // Heartbeat to keep the connection alive
   const heartbeat = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -1063,30 +1107,39 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
 app.ws('/ws/portfolio-updates', (ws, req) => {
   const clientId = `portfolio_${Date.now()}`;
   console.log(`📋 [${clientId}] Client subscribed to portfolio-updates`);
-  ws.send(JSON.stringify({
-    type: 'portfolio_connection_established',
-    clientId,
-    timestamp: new Date().toISOString()
-  }));
+
+  // Keep reference so we only broadcast to portfolio subscribers
+  portfolioClients.add(ws);
+
+  // Inform the client that the socket is ready
+  ws.send(
+    JSON.stringify({
+      type: 'portfolio_connection_established',
+      clientId,
+      timestamp: new Date().toISOString(),
+    })
+  );
+
+  // Heart-beat every 60 s to keep NATs / proxies happy
   const heartbeat = setInterval(() => {
-    if (ws.readyState === 1) {
+    if (ws.readyState === WebSocket.OPEN) {
       try {
         ws.ping();
       } catch (error) {
         console.error(`📋 [${clientId}] Ping failed:`, error);
         clearInterval(heartbeat);
       }
-    } else {
-      console.log(`📋 [${clientId}] WebSocket not ready, clearing heartbeat`);
-      clearInterval(heartbeat);
     }
   }, 60000);
-  ws.on('message', msg => {
+
+  ws.on('message', (msg) => {
     try {
       const message = JSON.parse(msg.toString());
-      console.log(`📋 [${clientId}] Received message:`, message.type);
-      wsInstance.getWss().clients.forEach(client => {
-        if (client !== ws && client.readyState === 1) {
+      console.log(`📋 [${clientId}] Received portfolio message:`, message.type);
+
+      // Broadcast only to other portfolio clients
+      portfolioClients.forEach((client) => {
+        if (client !== ws && client.readyState === WebSocket.OPEN) {
           client.send(msg);
         }
       });
@@ -1094,14 +1147,22 @@ app.ws('/ws/portfolio-updates', (ws, req) => {
       console.error(`📋 [${clientId}] Error processing message:`, error);
     }
   });
+
+  const cleanUp = () => {
+    clearInterval(heartbeat);
+    portfolioClients.delete(ws);
+  };
+
   ws.on('close', (code, reason) => {
     console.log(`📋 [${clientId}] Socket closed - Code: ${code}, Reason: ${reason}`);
-    clearInterval(heartbeat);
+    cleanUp();
   });
+
   ws.on('error', (error) => {
     console.error(`📋 [${clientId}] Socket error:`, error);
-    clearInterval(heartbeat);
+    cleanUp();
   });
+
   ws.on('pong', () => {
     console.log(`📋 [${clientId}] Pong received`);
   });
