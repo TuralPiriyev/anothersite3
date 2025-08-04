@@ -112,7 +112,7 @@ const PortfolioManager: React.FC = () => {
           onError: (error) => {
             console.error('❌ Portfolio WebSocket error:', error);
           },
-          enableReconnect: false
+          enableReconnect: true
         });
         setPortfolioConnectionId(connectionId);
       } catch (error) {
