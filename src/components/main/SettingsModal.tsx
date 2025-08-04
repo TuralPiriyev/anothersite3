@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Mail, Crown, Loader } from 'lucide-react';
+import { X, User, Mail, Crown, Loader, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface UserSettings {
   username: string;
@@ -18,6 +20,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  
+  const { logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (isOpen) {
@@ -40,6 +46,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       setError(err.response?.data?.message || 'Failed to fetch user settings');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      // Clear any additional localStorage items if needed
+      localStorage.clear();
+      // Close the modal first
+      onClose();
+      // Navigate to login page
+      navigate('/login', { replace: true });
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Even if logout fails on server side, clear local data and redirect
+      localStorage.clear();
+      onClose();
+      navigate('/login', { replace: true });
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
@@ -178,6 +205,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     </>
                   )}
                 </div>
+              </div>
+
+              {/* Logout Section */}
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <h4 className="font-medium text-red-900 mb-2">Account Actions</h4>
+                <p className="text-sm text-red-700 mb-3">
+                  Sign out of your account and return to the login page.
+                </p>
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors duration-200 text-sm font-medium"
+                >
+                  {isLoggingOut ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      Signing out...
+                    </>
+                  ) : (
+                    <>
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           ) : null}
