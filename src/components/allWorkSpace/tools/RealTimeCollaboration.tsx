@@ -378,6 +378,29 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
         setInviteUsername('');
         setInviteRole('editor');
         setInviteDuration('permanent');
+
+        // Broadcast invitation sent event
+        if (isConnected) {
+          broadcastSchemaChange('invitation_sent', { 
+            inviteeUsername: inviteUsername, 
+            role: inviteRole,
+            joinCode,
+            inviterUsername: user?.username
+          });
+        }
+
+        // Dispatch invitation event to update UI
+        window.dispatchEvent(new CustomEvent('collaboration-event', {
+          detail: { 
+            type: 'invitation_sent', 
+            data: { 
+              inviteeUsername: inviteUsername,
+              role: inviteRole,
+              joinCode,
+              inviterUsername: user?.username
+            } 
+          }
+        }));
       } else {
         setInviteError('Failed to create invitation. Please try again.');
       }
@@ -422,12 +445,40 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
         id: crypto.randomUUID(),
         username: invitation.inviteeUsername,
         role: invitation.role,
-        joinedAt: new Date().toISOString()
+        joinedAt: new Date().toISOString(),
+        isApproved: true, // Auto-approve when joining via valid code
+        approvedAt: new Date().toISOString(),
+        approvedBy: invitation.inviterUsername
       });
 
       if (memberResponse.data) {
         setJoinSuccess(`Successfully joined the workspace! You now have ${invitation.role} access.`);
         setJoinCode('');
+        
+        // Broadcast member joined event
+        if (isConnected) {
+          broadcastSchemaChange('member_approved', { 
+            memberId: memberResponse.data.id,
+            username: invitation.inviteeUsername,
+            role: invitation.role,
+            approvedBy: invitation.inviterUsername
+          });
+        }
+
+        // Dispatch member approved event to update TeamMembers component
+        window.dispatchEvent(new CustomEvent('collaboration-event', {
+          detail: { 
+            type: 'member_approved', 
+            data: { 
+              memberId: memberResponse.data.id,
+              username: invitation.inviteeUsername,
+              role: invitation.role,
+              approvedBy: invitation.inviterUsername,
+              isApproved: true,
+              approvedAt: new Date().toISOString()
+            } 
+          }
+        }));
         
         // Switch to members tab to show the new member
         setTimeout(() => setActiveTab('members'), 2000);
@@ -486,6 +537,18 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
         if (isConnected) {
           broadcastSchemaChange('member_removed', { memberId, username: member.username });
         }
+
+        // Dispatch member removal event to update TeamMembers component
+        window.dispatchEvent(new CustomEvent('collaboration-event', {
+          detail: { 
+            type: 'member_removed', 
+            data: { 
+              memberId, 
+              username: member.username,
+              removedBy: currentUser
+            } 
+          }
+        }));
       } catch (error) {
         console.error('Failed to update database:', error);
       }
