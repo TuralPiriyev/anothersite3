@@ -902,7 +902,7 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
           break;
 
         case 'user_join':
-          if (message.userId && message.username) {
+         if (message.userId && message.username) {
             ws.userId = message.userId;
             ws.username = message.username;
             ws.userRole = message.role || 'editor';
@@ -913,7 +913,8 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
                 id: message.userId,
                 username: message.username,
                 role: message.role || 'editor',
-                color: message.cursor.color || '#3B82F6',
+                // Birbaşa message.color istifadə edirik
+                color: message.color || '#3B82F6',
               },
               timestamp: new Date().toISOString(),
               schemaId,
