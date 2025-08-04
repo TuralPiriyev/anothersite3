@@ -42,6 +42,39 @@ const SMTP_PORT = Number(process.env.SMTP_PORT);
 const app = express();
 const wsInstance = expressWs(app);
 
+// ---------------------------------------------------------------------------
+// Helper utilities for WebSocket collaboration
+// ---------------------------------------------------------------------------
+
+/**
+ * Broadcast a message to every client that is connected to the same schema.
+ * @param {string} schemaId – Schema / workspace identifier
+ * @param {object} message  – Message object that will be stringified & sent
+ * @param {string|null} [excludeUserId] – If provided, the client with this
+ *   userId will be skipped (typically the sender)
+ */
+function broadcastToSchema(schemaId, message, excludeUserId = null) {
+  const data = JSON.stringify(message);
+  wsInstance.getWss().clients.forEach((client) => {
+    if (
+      client.readyState === WebSocket.OPEN &&
+      client.schemaId === schemaId &&
+      (excludeUserId ? client.userId !== excludeUserId : true)
+    ) {
+      try {
+        client.send(data);
+      } catch (err) {
+        console.error('❌ Error broadcasting to schema:', err);
+      }
+    }
+  });
+}
+
+// Simple in-memory store that holds the latest schema payload per schemaId so
+// that we can resend the most recent state to newly-connected clients or use
+// it for debugging. This is **not** a durable store – replace with DB in prod.
+const schemaStates = new Map();
+
 app.use(
   cors({
     origin: [
@@ -822,7 +855,7 @@ app.ws('/ws/collaboration', (ws, req) => {
           });
           break;
       }
-    } catch (ECCr) {
+    } catch (error) {
       console.error('❌ WebSocket error:', error);
     }
   });
@@ -879,26 +912,36 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
       let broadcastMessage = null;
 
       switch (message.type) {
-        case 'cursor_update':
-          if (message.cursor && 
-              typeof message.cursor === 'object' && 
-              message.cursor.userId && 
-              typeof message.cursor.userId === 'string') {
-            
+        case 'cursor_update': {
+          const cursorPayload = message.cursor || message.data?.cursor;
+          if (
+            cursorPayload &&
+            typeof cursorPayload === 'object' &&
+            cursorPayload.userId &&
+            typeof cursorPayload.userId === 'string'
+          ) {
             const cursorData = {
-              ...message.cursor,
-              timestamp: new Date().toISOString()
+              ...cursorPayload,
+              timestamp: new Date().toISOString(),
             };
-            
-            broadcastToSchema(schemaId, {
-              type: 'cursor_update',
-              data: cursorData
-            }, message.cursor.userId);
-            
-            console.log(`📍 Cursor update from ${message.cursor.username || message.cursor.userId} broadcasted`);
+            broadcastToSchema(
+              schemaId,
+              { type: 'cursor_update', data: cursorData },
+              cursorPayload.userId
+            );
+            console.log(
+              `📍 Cursor update from ${cursorPayload.username || cursorPayload.userId} broadcasted`
+            );
           } else {
             console.warn('⚠️ Invalid cursor_update message received:', message);
           }
+          break;
+        }
+        case 'ping':
+          // Respond to heartbeat from client
+          ws.send(
+            JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() })
+          );
           break;
 
         case 'user_join':
@@ -913,8 +956,8 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
                 id: message.userId,
                 username: message.username,
                 role: message.role || 'editor',
-                // Birbaşa message.color istifadə edirik
-                color: message.color || '#3B82F6',
+                // Fallback chain for color so we never access undefined props
+                color: message.color || message.data?.color || (message.cursor && message.cursor.color) || '#3B82F6',
               },
               timestamp: new Date().toISOString(),
               schemaId,
@@ -946,6 +989,17 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
             schemaId,
             clientId,
           };
+          // Persist latest schema state in memory so newcomers can catch up
+          try {
+            schemaStates.set(schemaId, {
+              changeType: message.changeType,
+              data: message.data,
+              timestamp: new Date().toISOString(),
+              userId: message.userId,
+            });
+          } catch (err) {
+            console.error('❌ Failed to persist schema change:', err);
+          }
           break;
 
         default:
