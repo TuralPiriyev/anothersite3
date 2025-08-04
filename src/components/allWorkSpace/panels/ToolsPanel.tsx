@@ -11,6 +11,7 @@ import SQLAnomalyValidator from '../tools/SQLAnomalyValidator';
 import LiveSQLEditor from '../tools/LiveSQLEditor';
 import SmartExportManager from '../tools/SmartExportManager';
 import RealTimeCollaboration from '../tools/RealTimeCollaboration';
+import TeamMembers from '../tools/TeamMembers';
 import VisualQueryBuilder from '../tools/VisualQueryBuilder';
 import ZeroCodeCRUDBuilder from '../tools/ZeroCodeCRUDBuilder';
 
@@ -21,6 +22,7 @@ type ActiveTool =
   | 'live_sql' 
   | 'smart_export' 
   | 'collaboration'
+  | 'team_members'
   | 'query_builder'
   | 'crud_builder'
   | null;
@@ -41,7 +43,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
     'Validation': ['sql_validator'],
     'Development': ['live_sql'],
     'Import/Export': ['smart_export'],
-    'Collaboration': ['collaboration']
+    'Collaboration': ['collaboration', 'team_members']
   };
 
   const tools = [
@@ -106,6 +108,14 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Collaboration',
       icon: Users,
       description: 'Real-time team features',
+      category: 'collaboration',
+      requiresPlan: 'ultimate' as const
+    },
+    {
+      id: 'team_members' as const,
+      name: 'Team Members',
+      icon: Users,
+      description: 'View and manage team members',
       category: 'collaboration',
       requiresPlan: 'ultimate' as const
     }
@@ -199,20 +209,19 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                           }`}>
                             <Icon className="w-4 h-4" />
                           </div>
-                          
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{tool.name}</span>
-                              {!isAvailable && (
-                                <span className="text-xs bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded">
-                                  {tool.requiresPlan === 'pro' ? 'Pro' : 'Ultimate'}
-                                </span>
-                              )}
+                            <div className="font-medium text-sm truncate">
+                              {tool.name}
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                               {tool.description}
                             </div>
                           </div>
+                          {!isAvailable && (
+                            <div className="text-xs bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded-full">
+                              {tool.requiresPlan === 'pro' ? 'Pro' : 'Ultimate'}
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -225,7 +234,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       </div>
 
       {/* Active Tool Content */}
-      <div className={`flex-1 overflow-hidden ${collapsed ? 'hidden' : ''}`}>
+      <div className={`flex-1 ${collapsed ? 'hidden' : ''}`}>
         {activeTool === 'enhanced_table' && <EnhancedTableBuilder />}
         {activeTool === 'relationships' && <RelationshipPanel />}
         {activeTool === 'query_builder' && <VisualQueryBuilder />}
@@ -234,22 +243,19 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
         {activeTool === 'live_sql' && <LiveSQLEditor />}
         {activeTool === 'smart_export' && <SmartExportManager />}
         {activeTool === 'collaboration' && <RealTimeCollaboration />}
-        
-        {!activeTool && (
-          <div className="h-full flex items-center justify-center p-6">
-            <div className="text-center">
-              <Settings className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400 text-sm">
-                Select a tool to get started
-              </p>
-            </div>
-          </div>
-        )}
+        {activeTool === 'team_members' && <TeamMembers />}
       </div>
 
       {/* Collapsed State - Show only icons */}
       {collapsed && (
         <div className="flex flex-col items-center py-4 space-y-3">
+          {/* Show TeamMembers in collapsed state for collaboration */}
+          {currentPlan === 'ultimate' && (
+            <div className="w-full">
+              <TeamMembers collapsed={true} />
+            </div>
+          )}
+          
           {tools.slice(0, 6).map(tool => {
             const Icon = tool.icon;
             const isAvailable = getToolAvailability(tool);
@@ -275,63 +281,6 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
               </button>
             );
           })}
-        </div>
-      )}
-
-      {/* Team Members Section */}
-      {currentSchema?.members && currentSchema.members.length > 1 && (
-        <div className={`border-t border-gray-200 dark:border-gray-700 p-4 ${collapsed ? 'hidden' : ''}`}>
-          <div className="mb-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-              <Users className="w-4 h-4" />
-              <span>Team Members ({currentSchema.members.length})</span>
-            </div>
-          </div>
-          
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {currentSchema.members.map(member => {
-              const getRoleIcon = (role: string) => {
-                switch (role) {
-                  case 'owner': return <Crown className="w-3 h-3 text-yellow-500" />;
-                  case 'admin': return <Crown className="w-3 h-3 text-purple-500" />;
-                  case 'editor': return <Edit className="w-3 h-3 text-blue-500" />;
-                  case 'viewer': return <Eye className="w-3 h-3 text-gray-500" />;
-                  default: return <Users className="w-3 h-3 text-gray-500" />;
-                }
-              };
-
-              const getRoleBadgeColor = (role: string) => {
-                switch (role) {
-                  case 'owner': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200';
-                  case 'admin': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-200';
-                  case 'editor': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-200';
-                  case 'viewer': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-200';
-                  default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-200';
-                }
-              };
-
-              return (
-                <div key={member.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <div className="w-6 h-6 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/20 dark:to-purple-900/20 rounded-full flex items-center justify-center flex-shrink-0">
-                      {getRoleIcon(member.role)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-gray-900 dark:text-white truncate">
-                        {member.username}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {member.role}
-                      </div>
-                    </div>
-                  </div>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(member.role)}`}>
-                    {member.role}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 

@@ -43,6 +43,7 @@ export default class CollaborationService {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
+  private presenceUpdateInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     // All WebSocket operations delegated to SimpleWebSocketService
@@ -53,7 +54,7 @@ export default class CollaborationService {
     this.schemaId = schemaId;
     this.userJoinSent = false; // Reset join status
     this.reconnectAttempts = 0;
-    console.log('🔧 CollaborationService initialized:', { user: user.username, schemaId });
+    console.log('🔧 CollaborationService initialized:', { user: user.username, schemaId, role: user.role });
   }
 
   connect(): Promise<void> {
@@ -81,6 +82,7 @@ export default class CollaborationService {
             this.isConnected = true;
             this.reconnectAttempts = 0;
             this.startHeartbeat();
+            this.startPresenceUpdates();
             this.emit('connected');
             resolve();
           },
@@ -92,6 +94,7 @@ export default class CollaborationService {
             this.isConnected = false;
             this.userJoinSent = false;
             this.stopHeartbeat();
+            this.stopPresenceUpdates();
             this.emit('disconnected');
             this.attemptReconnect();
           },
@@ -129,6 +132,23 @@ export default class CollaborationService {
     }
   }
 
+  private startPresenceUpdates() {
+    this.stopPresenceUpdates();
+    // Send presence updates every 10 seconds to keep member status current
+    this.presenceUpdateInterval = setInterval(() => {
+      if (this.isConnected && this.currentUser) {
+        this.updatePresence('online', 'Working on schema');
+      }
+    }, 10000);
+  }
+
+  private stopPresenceUpdates() {
+    if (this.presenceUpdateInterval) {
+      clearInterval(this.presenceUpdateInterval);
+      this.presenceUpdateInterval = null;
+    }
+  }
+
   private attemptReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
@@ -162,7 +182,7 @@ export default class CollaborationService {
         timestamp: new Date().toISOString()
       });
       this.userJoinSent = true;
-      console.log('📤 User join message sent successfully');
+      console.log('📤 User join message sent successfully with role:', this.currentUser.role);
     } catch (error) {
       console.error('❌ Failed to send user join message:', error);
     }
@@ -184,7 +204,7 @@ export default class CollaborationService {
         break;
         
       case 'user_joined':
-        console.log('👋 User joined:', message.user?.username);
+        console.log('👋 User joined:', message.user?.username, 'with role:', message.user?.role);
         this.emit('user_joined', message.user);
         break;
         
@@ -198,7 +218,12 @@ export default class CollaborationService {
         const cursorData = message.data;
         
         if (this.isValidCursorData(cursorData)) {
-          console.log('📍 Valid cursor update received:', cursorData);
+          console.log('📍 Valid cursor update received:', {
+            userId: cursorData.userId,
+            username: cursorData.username,
+            role: cursorData.role,
+            position: cursorData.position
+          });
           this.emit('cursor_update', cursorData);
         } else {
           console.warn('⚠️ Invalid cursor_update message structure:', {
@@ -225,7 +250,13 @@ export default class CollaborationService {
         break;
         
       case 'presence_update':
+        console.log('👤 Presence update received:', message.data);
         this.emit('presence_update', message.data);
+        break;
+        
+      case 'member_status_update':
+        console.log('📊 Member status update received:', message.data);
+        this.emit('member_status_update', message.data);
         break;
         
       case 'pong':
@@ -284,9 +315,10 @@ export default class CollaborationService {
       }
     };
 
-    console.log('📍 Sending enhanced cursor update:', {
+    console.log('📍 Sending enhanced cursor update with role:', {
       userId: cursorMessage.cursor.userId,
       username: cursorMessage.cursor.username,
+      role: cursorMessage.cursor.role,
       position: cursorMessage.cursor.position,
       schemaId: this.schemaId
     });
@@ -300,6 +332,7 @@ export default class CollaborationService {
       data: change.data,
       userId: this.currentUser!.id,
       username: this.currentUser!.username,
+      role: this.currentUser!.role,
       timestamp: new Date().toISOString()
     });
   }
@@ -310,6 +343,7 @@ export default class CollaborationService {
       data: workspaceData,
       userId: this.currentUser!.id,
       username: this.currentUser!.username,
+      role: this.currentUser!.role,
       timestamp: new Date().toISOString()
     });
   }
@@ -318,6 +352,8 @@ export default class CollaborationService {
       type: 'user_selection',
       data: {
         userId: this.currentUser!.id,
+        username: this.currentUser!.username,
+        role: this.currentUser!.role,
         selection,
         timestamp: new Date().toISOString()
       }
@@ -325,12 +361,27 @@ export default class CollaborationService {
   }
 
   updatePresence(status: 'online' | 'away' | 'busy', currentAction?: string) {
+    if (!this.currentUser) return;
+    
     this.sendMessage({
       type: 'presence_update',
       data: {
-        userId: this.currentUser!.id,
+        userId: this.currentUser.id,
+        username: this.currentUser.username,
+        role: this.currentUser.role,
         status,
         currentAction,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+
+  sendMemberStatusUpdate(memberData: any) {
+    this.sendMessage({
+      type: 'member_status_update',
+      data: {
+        ...memberData,
+        updatedBy: this.currentUser!.id,
         timestamp: new Date().toISOString()
       }
     });
@@ -389,6 +440,7 @@ export default class CollaborationService {
     console.log('🔌 Disconnecting from Collaboration WebSocket');
     
     this.stopHeartbeat();
+    this.stopPresenceUpdates();
     
     // Send leave message if connected
     if (this.connectionId && this.currentUser && this.isConnected && this.userJoinSent) {
