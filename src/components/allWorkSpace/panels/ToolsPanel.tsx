@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
   Database, Search, Link, Users, Code, Download, 
-  Settings, AlertTriangle, FileText, Activity 
+  Settings, AlertTriangle, FileText, Activity, Crown, Edit, Eye 
 } from 'lucide-react';
 import { useSubscription } from '../../../context/SubscriptionContext'; // Added subscription context
+import { useDatabase } from '../../../context/DatabaseContext';
 import EnhancedTableBuilder from '../tools/EnhancedTableBuilder';
 import RelationshipPanel from '../tools/RelationshipPanel';
 import SQLAnomalyValidator from '../tools/SQLAnomalyValidator';
@@ -30,6 +31,7 @@ interface ToolsPanelProps {
 
 const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
   const { currentPlan } = useSubscription(); // Added subscription hook
+  const { currentSchema } = useDatabase(); // Added database hook for team members
   const [activeTool, setActiveTool] = useState<ActiveTool>('enhanced_table');
 
   // Tool categories for better organization
@@ -273,6 +275,63 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Team Members Section */}
+      {currentSchema?.members && currentSchema.members.length > 1 && (
+        <div className={`border-t border-gray-200 dark:border-gray-700 p-4 ${collapsed ? 'hidden' : ''}`}>
+          <div className="mb-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <Users className="w-4 h-4" />
+              <span>Team Members ({currentSchema.members.length})</span>
+            </div>
+          </div>
+          
+          <div className="space-y-2 max-h-32 overflow-y-auto">
+            {currentSchema.members.map(member => {
+              const getRoleIcon = (role: string) => {
+                switch (role) {
+                  case 'owner': return <Crown className="w-3 h-3 text-yellow-500" />;
+                  case 'admin': return <Crown className="w-3 h-3 text-purple-500" />;
+                  case 'editor': return <Edit className="w-3 h-3 text-blue-500" />;
+                  case 'viewer': return <Eye className="w-3 h-3 text-gray-500" />;
+                  default: return <Users className="w-3 h-3 text-gray-500" />;
+                }
+              };
+
+              const getRoleBadgeColor = (role: string) => {
+                switch (role) {
+                  case 'owner': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200';
+                  case 'admin': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-200';
+                  case 'editor': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-200';
+                  case 'viewer': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-200';
+                  default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-200';
+                }
+              };
+
+              return (
+                <div key={member.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className="w-6 h-6 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/20 dark:to-purple-900/20 rounded-full flex items-center justify-center flex-shrink-0">
+                      {getRoleIcon(member.role)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-gray-900 dark:text-white truncate">
+                        {member.username}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {member.role}
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(member.role)}`}>
+                    {member.role}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

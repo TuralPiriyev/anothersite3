@@ -32,20 +32,43 @@ const MainLayout: React.FC = () => {
               typeof data === 'object' && 
               data.userId && 
               typeof data.userId === 'string' &&
-              data.userId.trim().length > 0) {
+              data.userId.trim().length > 0 &&
+              data.position &&
+              typeof data.position === 'object' &&
+              typeof data.position.x === 'number' &&
+              typeof data.position.y === 'number') {
             
             setCollaborativeCursors(prev => {
               const filtered = prev.filter(c => c.userId !== data.userId);
-              return [...filtered, {
+              const newCursor: CursorData = {
                 userId: data.userId,
                 username: data.username || 'Unknown User',
-                position: data.position || { x: 0, y: 0 },
+                position: {
+                  x: Math.max(0, Math.min(data.position.x, window.innerWidth)),
+                  y: Math.max(0, Math.min(data.position.y, window.innerHeight))
+                },
                 color: data.color || '#3B82F6',
-                lastSeen: data.lastSeen || new Date().toISOString()
-              }];
+                selection: data.selection,
+                lastSeen: data.lastSeen || new Date()
+              };
+              
+              console.log('📍 Adding cursor to MainLayout:', {
+                userId: newCursor.userId,
+                username: newCursor.username,
+                position: newCursor.position
+              });
+              
+              return [...filtered, newCursor];
             });
           } else {
-            console.warn('⚠️ Invalid cursor data received in MainLayout:', data);
+            console.warn('⚠️ Invalid cursor data received in MainLayout:', {
+              data,
+              hasUserId: !!(data?.userId),
+              hasPosition: !!(data?.position),
+              hasValidPosition: !!(data?.position && 
+                typeof data.position.x === 'number' && 
+                typeof data.position.y === 'number')
+            });
           }
           break;
           
