@@ -29,17 +29,23 @@ app.get('/health', (req, res) => {
 // Broadcast message to all users in a schema except sender
 function broadcastToSchema(schemaId, message, excludeUserId = null) {
   const schemaConnections = connections.get(schemaId);
-  if (!schemaConnections) return;
+  if (!schemaConnections) {
+    console.log(`[broadcastToSchema] Schema bağlantısı tapılmadı: ${schemaId}`);
+    return;
+  }
 
   const messageStr = JSON.stringify(message);
-  console.log(`📤 Broadcasting to schema ${schemaId}:`, message.type, `(${schemaConnections.size} connections)`);
+  console.log(`📤 [broadcastToSchema] Schema ${schemaId} üçün yayım:`, message.type, `(${schemaConnections.size} connections)`);
+  console.log(`📤 [broadcastToSchema] Mesaj:`, messageStr);
 
   schemaConnections.forEach(ws => {
+    console.log(`[broadcastToSchema] Bağlantı: userId=${ws.userId}, readyState=${ws.readyState}`);
     if (ws.readyState === 1 && ws.userId !== excludeUserId) { // 1 = OPEN
       try {
         ws.send(messageStr);
+        console.log(`[broadcastToSchema] Mesaj göndərildi: userId=${ws.userId}`);
       } catch (error) {
-        console.error('Error sending message to client:', error);
+        console.error('[broadcastToSchema] Müştəriyə mesaj göndərilməsində xəta:', error);
         cleanupConnection(ws, schemaId);
       }
     }
@@ -113,15 +119,14 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log(`📨 Received message for schema ${schemaId}:`, message.type);
-      
+      console.log(`📨 [WS] Mesaj alındı: schema=${schemaId}, type=${message.type}, data=`, message);
       switch (message.type) {
         case 'user_join':
           ws.userId = message.userId;
           ws.username = message.username;
           ws.role = message.role || 'editor';
           userSessions.set(message.userId, ws);
-          
+          console.log(`[WS] user_join: userId=${message.userId}, username=${message.username}, role=${ws.role}`);
           // Broadcast user joined to others
           broadcastToSchema(schemaId, {
             type: 'user_joined',
@@ -132,43 +137,32 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
               joinedAt: new Date().toISOString()
             }
           }, message.userId);
-          
-          console.log(`👋 User ${message.username} (${ws.role}) joined schema ${schemaId}`);
           break;
-          
         case 'user_leave':
+          console.log(`[WS] user_leave: userId=${message.userId}, username=${message.username}`);
           broadcastToSchema(schemaId, {
             type: 'user_left',
             userId: message.userId
           }, message.userId);
-          
-          console.log(`👋 User ${message.username} left schema ${schemaId}`);
           break;
-          
         case 'cursor_update':
-          if (message.cursor && 
-              typeof message.cursor === 'object' && 
-              message.cursor.userId && 
-              typeof message.cursor.userId === 'string') {
-            
+          console.log(`[WS] cursor_update:`, message.cursor);
+          if (message.cursor && typeof message.cursor === 'object' && message.cursor.userId && typeof message.cursor.userId === 'string') {
             const cursorData = {
               ...message.cursor,
               timestamp: new Date().toISOString()
             };
-            
+            console.log(`[WS] cursor_update yayılacaq:`, cursorData);
             broadcastToSchema(schemaId, {
               type: 'cursor_update',
               data: cursorData
             }, message.cursor.userId);
-            
-            console.log(`📍 Cursor update from ${message.cursor.username || message.cursor.userId} broadcasted`);
           } else {
-            console.warn('⚠️ Invalid cursor_update message received:', message);
+            console.warn('[WS] cursor_update formatı səhvdir:', message);
           }
           break;
-          
         case 'schema_change':
-          // Validate schema change data
+          console.log(`[WS] schema_change:`, message);
           if (!message.changeType || !message.data) {
             ws.send(JSON.stringify({
               type: 'error',
@@ -176,8 +170,6 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
             }));
             break;
           }
-          
-          // Broadcast schema changes to all users
           const schemaChangeMessage = {
             type: 'schema_change',
             changeType: message.changeType,
@@ -186,47 +178,38 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
             username: message.username,
             timestamp: new Date().toISOString()
           };
-          
           broadcastToSchema(schemaId, schemaChangeMessage, message.userId);
-          
-          console.log(`🔄 Schema change: ${message.changeType} by ${message.username || message.userId}`);
           break;
-          
         case 'user_selection':
-          // Broadcast user selection to other users
+          console.log(`[WS] user_selection:`, message.data);
           broadcastToSchema(schemaId, {
             type: 'user_selection',
             data: message.data
           }, message.data?.userId);
           break;
-          
         case 'presence_update':
-          // Broadcast presence updates
+          console.log(`[WS] presence_update:`, message.data);
           broadcastToSchema(schemaId, {
             type: 'presence_update',
             data: message.data
           }, message.data?.userId);
           break;
-          
         case 'member_added':
-          // Broadcast member addition to all users
+          console.log(`[WS] member_added:`, message.data);
           broadcastToSchema(schemaId, {
             type: 'member_added',
             data: message.data
           });
-          console.log('👥 Member added:', message.data?.member?.username);
           break;
-          
         case 'ping':
-          // Respond to heartbeat
+          console.log(`[WS] ping:`, message);
           ws.send(JSON.stringify({ type: 'pong' }));
           break;
-          
         default:
-          console.log(`❓ Unknown message type: ${message.type}`);
+          console.log(`[WS] Naməlum mesaj tipi: ${message.type}`, message);
       }
     } catch (error) {
-      console.error('❌ Error processing WebSocket message:', error);
+      console.error('[WS] Mesaj işlənməsində xəta:', error, data);
       ws.send(JSON.stringify({
         type: 'error',
         message: 'Invalid message format'
@@ -236,22 +219,21 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
   
   // Handle connection close
   ws.on('close', () => {
-    console.log(`❌ WebSocket connection closed for schema: ${schemaId}`);
-    
+    console.log(`❌ [WS] WebSocket bağlantısı bağlandı: schema=${schemaId}, userId=${ws.userId}`);
     // Notify other users
     if (ws.userId) {
+      console.log(`[WS] user_left yayımı: userId=${ws.userId}`);
       broadcastToSchema(schemaId, {
         type: 'user_left',
         userId: ws.userId
       }, ws.userId);
     }
-    
     cleanupConnection(ws, schemaId);
   });
   
   // Handle connection errors
   ws.on('error', (error) => {
-    console.error('❌ WebSocket error:', error);
+    console.error('❌ [WS] WebSocket error:', error, `schema=${schemaId}, userId=${ws.userId}`);
     cleanupConnection(ws, schemaId);
   });
   
