@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from './Header';
+import CollaborationBridge from './CollaborationBridge';
 import WorkspacePanel from '../panels/WorkspacePanel';
 import PortfolioPanel from '../panels/PortfolioPanel';
 import ToolsPanel from '../panels/ToolsPanel';
@@ -128,6 +129,8 @@ const MainLayout: React.FC = () => {
   
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200 relative">
+      {/* Background collaboration connection */}
+      <CollaborationBridge />
       <Header />
       
       {/* Collaboration Status Indicator - Only show in development */}

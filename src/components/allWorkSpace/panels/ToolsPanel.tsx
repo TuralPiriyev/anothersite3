@@ -279,7 +279,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       )}
 
       {/* Team Members Section */}
-      {currentSchema?.members && currentSchema.members.length > 1 && (
+      {currentSchema?.members && currentSchema.members.length > 0 && (
         <div className={`border-t border-gray-200 dark:border-gray-700 p-4 ${collapsed ? 'hidden' : ''}`}>
           <div className="mb-3">
             <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
