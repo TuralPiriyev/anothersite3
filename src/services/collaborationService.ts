@@ -25,7 +25,7 @@ import { simpleWebSocketService } from './simpleWebSocketService';
 // WebSocket URL helper
 const getWebSocketUrl = (schemaId: string) => {
   if (import.meta.env.DEV) {
-    return `ws://localhost:5000/ws/collaboration/${schemaId}`;
+    return `ws://localhost:5001/ws/collaboration/${schemaId}`;
   }
   
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -43,6 +43,7 @@ export default class CollaborationService {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
+  private wsUrl = `ws://localhost:5001/ws/collaboration`;
 
   constructor() {
     // All WebSocket operations delegated to SimpleWebSocketService

@@ -3,7 +3,7 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 
-const PORT = process.env.WEBSOCKET_PORT || 5000;
+const PORT = process.env.WEBSOCKET_PORT || 5001;
 
 console.log('🔧 WebSocket Server Configuration:');
 console.log(`📡 Port: ${PORT}`);
