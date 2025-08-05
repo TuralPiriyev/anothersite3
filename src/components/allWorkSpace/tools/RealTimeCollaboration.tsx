@@ -201,6 +201,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
               typeof cursor.userId === 'string') {
             setCursors(prev => {
               const existing = prev.findIndex(c => c.userId === cursor.userId);
+
               const cursorData = {
                 userId: cursor.userId,
                 username: cursor.username || 'Unknown',
@@ -211,10 +212,16 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
               };
 
               if (existing >= 0) {
+                // Only update dynamic fields to preserve static metadata (e.g. color)
                 const updated = [...prev];
-                updated[existing] = cursorData;
+                updated[existing] = {
+                  ...updated[existing],
+                  position: cursorData.position,
+                  lastSeen: cursorData.lastSeen
+                };
                 return updated;
               }
+
               return [...prev, cursorData];
             });
             
@@ -359,7 +366,13 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
     const handleCursorMove = (event: CustomEvent) => {
       const { position } = event.detail;
       if (position && isConnected && collaborationService.isConnectedState()) {
-        collaborationService.sendCursorUpdate(position);
+        // Send full cursor payload so that other clients receive all metadata
+        collaborationService.sendCursorUpdate({
+          userId: user?.id || 'current_user',
+          username: user?.username || 'anonymous',
+          position,
+          color: user?.color || '#3B82F6'
+        } as any);
       }
     };
 
@@ -501,59 +514,37 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
       // Update invitation status in database
       await api.put(`/invitations/${invitation.id}`, { status: 'accepted' });
 
-      // Add member to database
-      const memberResponse = await api.post('/members', {
-        workspaceId: invitation.workspaceId,
-        id: crypto.randomUUID(),
+      // Build the new member object directly from the invitation payload
+      const newMember = {
+        id: invitation.id,
         username: invitation.inviteeUsername,
-        role: invitation.role,
-        joinedAt: new Date().toISOString()
+        role: invitation.role as 'editor' | 'viewer',
+        joinedAt: new Date(invitation.joinedAt ?? Date.now()),
+        invitedBy: invitation.inviterUsername
+      };
+
+      // Persist in local schema while keeping previous owners/ members
+      setCurrentSchema(prev => {
+        if (prev.members.some(m => m.username === newMember.username)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          members: [...prev.members, newMember],
+          isShared: true,
+          updatedAt: new Date()
+        };
       });
 
-      if (memberResponse.data) {
-        // Update local schema with new member
-        setCurrentSchema(prev => {
-          const newMember = {
-            id: memberResponse.data.id,
-            username: invitation.inviteeUsername,
-            role: invitation.role,
-            joinedAt: new Date(),
-            invitedBy: invitation.inviterUsername
-          };
-          
-          // Check if member already exists
-          const exists = prev.members.some(m => m.username === newMember.username);
-          if (exists) {
-            return prev;
-          }
-          
-          return {
-            ...prev,
-            members: [...prev.members, newMember],
-            isShared: true,
-            updatedAt: new Date()
-          };
-        });
+      setJoinSuccess(`Successfully joined the workspace! You now have ${invitation.role} access.`);
+      setJoinCode('');
 
-        setJoinSuccess(`Successfully joined the workspace! You now have ${invitation.role} access.`);
-        setJoinCode('');
-        
-        // Switch to members tab to show the new member
-        setTimeout(() => setActiveTab('members'), 2000);
-        
-        // Broadcast member addition to other users
-        if (isConnected) {
-          broadcastSchemaChange('member_added', { 
-            member: {
-              id: memberResponse.data.id,
-              username: invitation.inviteeUsername,
-              role: invitation.role,
-              joinedAt: new Date()
-            }
-          });
-        }
-      } else {
-        setJoinError('Failed to join workspace.');
+      // Show the members tab so the user immediately sees the team list
+      setTimeout(() => setActiveTab('members'), 2000);
+
+      // Notify other collaborators in real-time
+      if (isConnected) {
+        broadcastSchemaChange('member_added', { member: newMember });
       }
       
     } catch (error: any) {
@@ -657,11 +648,13 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
   const broadcastCursorPosition = (x: number, y: number, selection?: any) => {
     if (isConnected && collaborationService.isConnectedState()) {
       collaborationService.sendCursorUpdate({
-        x,
-        y,
+        userId: user?.id || 'current_user',
+        username: user?.username || 'anonymous',
+        position: { x, y },
+        color: user?.color || '#3B82F6',
         tableId: selection?.tableId,
         columnId: selection?.columnId
-      });
+      } as any);
     }
   };
   
