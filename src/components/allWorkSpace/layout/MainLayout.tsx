@@ -181,7 +181,7 @@ const MainLayout: React.FC = () => {
       
       {/* Collaborative Cursors Overlay */}
       <CollaborativeCursors 
-        cursors={collaborativeCursors.filter(c => c.userId !== (user?.id || 'current_user'))}
+        cursors={collaborativeCursors}
         onCursorMove={handleCursorMove}
       />
       
