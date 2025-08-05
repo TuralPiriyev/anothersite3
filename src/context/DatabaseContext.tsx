@@ -4,6 +4,7 @@ import initSqlJs from 'sql.js';
 import { v4 as uuidv4 } from 'uuid';
 import { mongoService } from '../services/mongoService';
 import { useAuth } from './AuthContext';
+import { useSubscription } from './SubscriptionContext';
 
 export interface Column {
   id: string;
@@ -202,6 +203,7 @@ interface DatabaseProviderProps {
 export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) => {
   const [sqlEngine, setSqlEngine] = useState<any>(null);
   const { user } = useAuth();
+  const { currentPlan } = useSubscription();
   
   const [currentSchema, setCurrentSchema] = useState<Schema>({
     id: uuidv4(),
@@ -612,6 +614,44 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       return () => clearInterval(syncInterval);
     }
   }, [currentSchema.isShared, syncWorkspaceWithMongoDB]);
+
+  /* ------------------------------------------------------------------
+   * Load workspace members from MongoDB whenever workspace id or plan
+   * changes.  This ensures the Team Members panels always have fresh
+   * username / role data, even when the real-time collaboration tool
+   * is not open.
+   * ----------------------------------------------------------------*/
+  useEffect(() => {
+    const fetchMembers = async () => {
+      // Only Ultimate plan workspaces are shareable at the moment
+      if (currentPlan !== 'ultimate' || !currentSchema?.id) return;
+
+      try {
+        const members = await mongoService.getWorkspaceMembers(currentSchema.id);
+        if (!members || members.length === 0) return;
+
+        // Keep existing owner and merge / deduplicate other members
+        setCurrentSchema(prev => {
+          const owner = prev.members.find(m => m.role === 'owner');
+          const nonOwnerMembers = members.filter((m: any) => m.role !== 'owner');
+
+          // Prevent duplicate ids
+          const merged = owner ? [owner, ...nonOwnerMembers] : nonOwnerMembers;
+
+          return {
+            ...prev,
+            members: merged,
+            isShared: merged.length > 1,
+            updatedAt: new Date()
+          };
+        });
+      } catch (err) {
+        console.error('Failed to load workspace members:', err);
+      }
+    };
+
+    fetchMembers();
+  }, [currentSchema.id, currentPlan]);
 
   const addTable = useCallback((table: Omit<Table, 'id' | 'rowCount' | 'data'>) => {
     const newTable: Table = {
