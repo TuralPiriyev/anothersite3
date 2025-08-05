@@ -261,6 +261,41 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
           });
         };
 
+        const handleMemberAdded = (data: any) => {
+          if (data && data.member) {
+            console.log('👥 Member added to workspace:', data.member.username);
+            
+            // Update local schema with new member
+            setCurrentSchema(prev => {
+              const exists = prev.members.some(m => m.username === data.member.username);
+              if (exists) return prev;
+              
+              return {
+                ...prev,
+                members: [...prev.members, data.member],
+                isShared: true,
+                updatedAt: new Date()
+              };
+            });
+            
+            // Add to collaborators list
+            setCollaborators(prev => {
+              const exists = prev.find(c => c.userId === data.member.id);
+              if (!exists) {
+                return [...prev, {
+                  userId: data.member.id,
+                  username: data.member.username,
+                  role: data.member.role,
+                  status: 'online' as const,
+                  currentAction: 'Working on schema',
+                  joinedAt: new Date(data.member.joinedAt)
+                }];
+              }
+              return prev;
+            });
+          }
+        };
+
         const handleError = (error: any) => {
           console.error('❌ Collaboration error:', error);
           setConnectionQuality('poor');
@@ -274,6 +309,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
         collaborationService.on('cursor_update', handleCursorUpdate);
         collaborationService.on('schema_change', handleSchemaChange);
         collaborationService.on('current_users', handleCurrentUsers);
+        collaborationService.on('member_added', handleMemberAdded);
         collaborationService.on('error', handleError);
 
         // Connect to collaboration service
@@ -288,6 +324,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
           collaborationService.off('cursor_update', handleCursorUpdate);
           collaborationService.off('schema_change', handleSchemaChange);
           collaborationService.off('current_users', handleCurrentUsers);
+          collaborationService.off('member_added', handleMemberAdded);
           collaborationService.off('error', handleError);
           collaborationService.disconnect();
         };
@@ -390,6 +427,27 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
       });
 
       if (invitationResponse.data) {
+        // Update local schema with new invitation
+        setCurrentSchema(prev => {
+          const newInvitation = {
+            id: invitationResponse.data.id,
+            workspaceId: currentSchema.id,
+            inviterUsername: user?.username || 'current_user',
+            inviteeUsername: inviteUsername,
+            role: inviteRole,
+            joinCode: joinCode,
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            status: 'pending'
+          };
+          
+          return {
+            ...prev,
+            invitations: [...prev.invitations, newInvitation],
+            updatedAt: new Date()
+          };
+        });
+
         setGeneratedCode(joinCode);
         const durationText = inviteDuration === 'permanent' ? 'permanent access' : 
                            inviteDuration === '1day' ? '1 day access' :
@@ -448,11 +506,47 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
       });
 
       if (memberResponse.data) {
+        // Update local schema with new member
+        setCurrentSchema(prev => {
+          const newMember = {
+            id: memberResponse.data.id,
+            username: invitation.inviteeUsername,
+            role: invitation.role,
+            joinedAt: new Date(),
+            invitedBy: invitation.inviterUsername
+          };
+          
+          // Check if member already exists
+          const exists = prev.members.some(m => m.username === newMember.username);
+          if (exists) {
+            return prev;
+          }
+          
+          return {
+            ...prev,
+            members: [...prev.members, newMember],
+            isShared: true,
+            updatedAt: new Date()
+          };
+        });
+
         setJoinSuccess(`Successfully joined the workspace! You now have ${invitation.role} access.`);
         setJoinCode('');
         
         // Switch to members tab to show the new member
         setTimeout(() => setActiveTab('members'), 2000);
+        
+        // Broadcast member addition to other users
+        if (isConnected) {
+          broadcastSchemaChange('member_added', { 
+            member: {
+              id: memberResponse.data.id,
+              username: invitation.inviteeUsername,
+              role: invitation.role,
+              joinedAt: new Date()
+            }
+          });
+        }
       } else {
         setJoinError('Failed to join workspace.');
       }

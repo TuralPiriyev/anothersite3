@@ -220,6 +220,11 @@ export default class CollaborationService {
         this.emit('current_users', message.users || []);
         break;
 
+      case 'member_added':
+        console.log('👥 Member added:', message.data?.member?.username);
+        this.emit('member_added', message.data);
+        break;
+
       case 'schema_sync':
         console.log('🔄 Full schema sync received');
         this.emit('schema_sync', message.data);

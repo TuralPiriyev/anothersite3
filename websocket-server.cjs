@@ -245,6 +245,15 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
           }, message.data?.userId);
           break;
           
+        case 'member_added':
+          // Broadcast member addition to all users
+          broadcastToSchema(schemaId, {
+            type: 'member_added',
+            data: message.data
+          });
+          console.log('👥 Member added:', message.data?.member?.username);
+          break;
+          
         case 'ping':
           // Respond to heartbeat
           ws.send(JSON.stringify({ type: 'pong' }));
