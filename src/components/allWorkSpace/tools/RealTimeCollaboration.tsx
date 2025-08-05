@@ -200,7 +200,9 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
               cursor.userId && 
               typeof cursor.userId === 'string') {
             setCursors(prev => {
-              const existing = prev.findIndex(c => c.userId === cursor.userId);
+              // Filter out cursors from the same user to prevent duplicates
+              const filtered = prev.filter(c => c.userId !== cursor.userId);
+              
               const cursorData = {
                 userId: cursor.userId,
                 username: cursor.username || 'Unknown',
@@ -210,12 +212,17 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
                 lastSeen: new Date(cursor.lastSeen || Date.now())
               };
 
-              if (existing >= 0) {
-                const updated = [...prev];
-                updated[existing] = cursorData;
-                return updated;
+              // Only add cursor if it's from a different user or if position has changed significantly
+              const existingCursor = prev.find(c => c.userId === cursor.userId);
+              if (!existingCursor || 
+                  Math.abs(existingCursor.position.x - cursorData.position.x) > 5 ||
+                  Math.abs(existingCursor.position.y - cursorData.position.y) > 5) {
+                
+                console.log('📍 Adding/updating cursor for user:', cursorData.username, 'at position:', cursorData.position);
+                return [...filtered, cursorData];
               }
-              return [...prev, cursorData];
+              
+              return prev;
             });
             
             // Dispatch cursor update event to MainLayout
@@ -327,6 +334,29 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
       window.removeEventListener('cursor-move', handleCursorMove as EventListener);
     };
   }, [isConnected]);
+
+  // Cleanup stale cursors periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      setCursors(prev => {
+        const now = Date.now();
+        const activeCursors = prev.filter(cursor => {
+          const lastSeenTime = cursor.lastSeen instanceof Date ? 
+            cursor.lastSeen.getTime() : 
+            new Date(cursor.lastSeen).getTime();
+          return (now - lastSeenTime) < 30000; // 30 seconds
+        });
+        
+        if (activeCursors.length !== prev.length) {
+          console.log('🧹 Cleaned up stale cursors:', prev.length - activeCursors.length, 'removed');
+        }
+        
+        return activeCursors;
+      });
+    }, 10000); // Cleanup every 10 seconds
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   // Real database collaboration functions
   const handleSendInvitation = async () => {
@@ -604,12 +634,24 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
             const owner = currentSchema.members.find(m => m.role === 'owner');
             const loadedMembers = members.filter((m: { role: string }) => m.role !== 'owner');
             
+            // Ensure all members have proper data structure
+            const processedMembers = (owner ? [owner, ...loadedMembers] : members).map(member => ({
+              id: member.id || member._id,
+              username: member.username || 'Unknown User',
+              role: member.role || 'viewer',
+              joinedAt: member.joinedAt ? new Date(member.joinedAt) : new Date(),
+              expiresAt: member.expiresAt ? new Date(member.expiresAt) : undefined,
+              invitedBy: member.invitedBy
+            }));
+            
             setCurrentSchema((prev: typeof currentSchema) => ({
               ...prev,
-              members: owner ? [owner, ...loadedMembers] : members,
-              isShared: members.length > 1,
+              members: processedMembers,
+              isShared: processedMembers.length > 1,
               updatedAt: new Date()
             }));
+            
+            console.log('👥 Loaded workspace members:', processedMembers);
           }
         } catch (error) {
           console.error('Failed to load workspace members:', error);
@@ -630,15 +672,44 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
           const workspaceMembers = await mongoService.getWorkspaceMembers(currentSchema.id);
           const workspaceInvitations = await mongoService.getWorkspaceInvitations(currentSchema.id);
           
-          // Update local state with fresh data
-          setCollaborators(workspaceMembers.map((member: any) => ({
-            userId: member.id,
-            username: member.username,
+          // Process workspace members with proper data structure
+          const processedMembers = workspaceMembers.map((member: any) => ({
+            userId: member.id || member._id,
+            username: member.username || 'Unknown User',
             role: member.role as 'admin' | 'editor' | 'viewer',
             status: 'online' as const,
             currentAction: 'Working on schema',
-            joinedAt: member.joinedAt
-          })));
+            joinedAt: member.joinedAt ? new Date(member.joinedAt) : new Date()
+          }));
+          
+          // Update collaborators state
+          setCollaborators(processedMembers);
+          
+          // Also update the current schema members if there are changes
+          const currentMemberIds = currentSchema.members.map(m => m.id);
+          const newMemberIds = processedMembers.map(m => m.userId);
+          
+          if (currentMemberIds.length !== newMemberIds.length || 
+              !currentMemberIds.every(id => newMemberIds.includes(id))) {
+            
+            // Update schema members with processed data
+            const schemaMembers = workspaceMembers.map((member: any) => ({
+              id: member.id || member._id,
+              username: member.username || 'Unknown User',
+              role: member.role || 'viewer',
+              joinedAt: member.joinedAt ? new Date(member.joinedAt) : new Date(),
+              expiresAt: member.expiresAt ? new Date(member.expiresAt) : undefined,
+              invitedBy: member.invitedBy
+            }));
+            
+            setCurrentSchema(prev => ({
+              ...prev,
+              members: schemaMembers,
+              isShared: schemaMembers.length > 1
+            }));
+            
+            console.log('🔄 Updated workspace members from sync:', schemaMembers);
+          }
           
          setCollaborationStatus(prev => ({
   ...prev,
@@ -657,7 +728,31 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
 
       return () => clearInterval(syncInterval);
     }
-  }, [currentPlan, currentSchema.isShared, currentSchema.id]);
+  }, [currentPlan, currentSchema.isShared, currentSchema.id, currentSchema.members]);
+
+  // Debug logging for team members
+  useEffect(() => {
+    if (currentSchema.members.length > 0) {
+      console.log('👥 Current team members:', currentSchema.members.map(m => ({
+        id: m.id,
+        username: m.username,
+        role: m.role,
+        joinedAt: m.joinedAt
+      })));
+    }
+  }, [currentSchema.members]);
+
+  // Debug logging for cursors
+  useEffect(() => {
+    if (cursors.length > 0) {
+      console.log('🎯 Current cursors:', cursors.map(c => ({
+        userId: c.userId,
+        username: c.username,
+        position: c.position,
+        color: c.color
+      })));
+    }
+  }, [cursors]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -1096,7 +1191,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-gray-900 dark:text-white">
-                            {member.username}
+                            {member.username || 'Unknown User'}
                           </p>
                           {member.username === (user?.username || 'current_user') && (
                             <span className="text-xs bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">
@@ -1111,10 +1206,15 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
                           )}
                         </div>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Joined {member.joinedAt.toLocaleDateString()}
-                          {member.expiresAt && (
+                          Joined {member.joinedAt ? member.joinedAt.toLocaleDateString() : 'Recently'}
+                          {member.expiresAt && member.expiresAt > new Date() && (
                             <span className="ml-2 text-red-500">
                               • Expires {member.expiresAt.toLocaleDateString()}
+                            </span>
+                          )}
+                          {member.expiresAt && member.expiresAt <= new Date() && (
+                            <span className="ml-2 text-red-500">
+                              • Expired {member.expiresAt.toLocaleDateString()}
                             </span>
                           )}
                         </p>
@@ -1122,7 +1222,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={`px-3 py-1 text-xs font-medium rounded-full ${getRoleBadgeColor(member.role)}`}>
-                        {member.role}
+                        {member.role === 'editor' ? 'Editor' : member.role === 'viewer' ? 'Viewer' : member.role}
                       </span>
                       {member.role !== 'owner' && member.username !== (user?.username || 'current_user') && (
                         <button

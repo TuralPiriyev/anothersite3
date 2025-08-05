@@ -36,10 +36,26 @@ const MainLayout: React.FC = () => {
               data.position &&
               typeof data.position === 'object' &&
               typeof data.position.x === 'number' &&
-              typeof data.position.y === 'number') {
+              typeof data.position.y === 'number' &&
+              !isNaN(data.position.x) &&
+              !isNaN(data.position.y)) {
             
             setCollaborativeCursors(prev => {
+              // Remove existing cursor from same user
               const filtered = prev.filter(c => c.userId !== data.userId);
+              
+              // Check if position has changed significantly to avoid unnecessary updates
+              const existingCursor = prev.find(c => c.userId === data.userId);
+              if (existingCursor) {
+                const xDiff = Math.abs(existingCursor.position.x - data.position.x);
+                const yDiff = Math.abs(existingCursor.position.y - data.position.y);
+                
+                // Only update if position changed significantly (more than 5px)
+                if (xDiff < 5 && yDiff < 5) {
+                  return prev;
+                }
+              }
+              
               const newCursor: CursorData = {
                 userId: data.userId,
                 username: data.username || 'Unknown User',
@@ -67,7 +83,9 @@ const MainLayout: React.FC = () => {
               hasPosition: !!(data?.position),
               hasValidPosition: !!(data?.position && 
                 typeof data.position.x === 'number' && 
-                typeof data.position.y === 'number')
+                typeof data.position.y === 'number' &&
+                !isNaN(data.position.x) &&
+                !isNaN(data.position.y))
             });
           }
           break;
