@@ -83,6 +83,13 @@ const MainLayout: React.FC = () => {
           setIsCollaborationConnected(data.connected);
           break;
           
+        case 'member_added':
+          // Handle member addition
+          if (data && data.member) {
+            console.log('👥 Member added in MainLayout:', data.member.username);
+          }
+          break;
+          
         case 'workspace_sync':
           // Handle complete workspace synchronization
           if (data && data.schema) {

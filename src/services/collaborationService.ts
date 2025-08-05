@@ -298,7 +298,7 @@ export default class CollaborationService {
       }
     };
 
-    console.log('📍 Sending enhanced cursor update:', {
+    console.log('📍 Sending cursor update:', {
       userId: cursorMessage.cursor.userId,
       username: cursorMessage.cursor.username,
       position: cursorMessage.cursor.position,

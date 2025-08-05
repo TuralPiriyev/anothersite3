@@ -293,6 +293,11 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
               }
               return prev;
             });
+            
+            // Dispatch member added event to MainLayout
+            window.dispatchEvent(new CustomEvent('collaboration-event', {
+              detail: { type: 'member_added', data: data }
+            }));
           }
         };
 
