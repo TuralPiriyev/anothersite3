@@ -7,6 +7,7 @@ import WorkspacePanel from '../panels/WorkspacePanel';
 import PortfolioPanel from '../panels/PortfolioPanel';
 import ToolsPanel from '../panels/ToolsPanel';
 import CollaborativeCursors, { CursorData } from '../workspace/CollaborativeCursors';
+import { useAuth } from '../../../context/AuthContext';
 import { useDatabase } from '../../../context/DatabaseContext';
 
 const MainLayout: React.FC = () => {
@@ -18,6 +19,7 @@ const MainLayout: React.FC = () => {
   const [isCollaborationConnected, setIsCollaborationConnected] = useState(false);
 
   const { currentSchema } = useDatabase();
+  const { user } = useAuth();
 
   useEffect(() => {
     // Listen for collaboration events from RealTimeCollaboration component
@@ -179,7 +181,7 @@ const MainLayout: React.FC = () => {
       
       {/* Collaborative Cursors Overlay */}
       <CollaborativeCursors 
-        cursors={collaborativeCursors}
+        cursors={collaborativeCursors.filter(c => c.userId !== (user?.id || 'current_user'))}
         onCursorMove={handleCursorMove}
       />
       

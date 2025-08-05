@@ -199,17 +199,21 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
               typeof cursor === 'object' && 
               cursor.userId && 
               typeof cursor.userId === 'string') {
+
+            // Ignore updates from our own cursor
+            if (cursor.userId === (user?.id || 'current_user')) return;
+
+            const cursorData = {
+              userId: cursor.userId,
+              username: cursor.username || 'Unknown',
+              position: cursor.position || { x: 0, y: 0 },
+              selection: cursor.selection,
+              color: cursor.color || '#3B82F6',
+              lastSeen: new Date(cursor.lastSeen || Date.now())
+            };
+
             setCursors(prev => {
               const existing = prev.findIndex(c => c.userId === cursor.userId);
-
-              const cursorData = {
-                userId: cursor.userId,
-                username: cursor.username || 'Unknown',
-                position: cursor.position || { x: 0, y: 0 },
-                selection: cursor.selection,
-                color: cursor.color || '#3B82F6',
-                lastSeen: new Date(cursor.lastSeen || Date.now())
-              };
 
               if (existing >= 0) {
                 // Only update dynamic fields to preserve static metadata (e.g. color)
@@ -366,13 +370,8 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
     const handleCursorMove = (event: CustomEvent) => {
       const { position } = event.detail;
       if (position && isConnected && collaborationService.isConnectedState()) {
-        // Send full cursor payload so that other clients receive all metadata
-        collaborationService.sendCursorUpdate({
-          userId: user?.id || 'current_user',
-          username: user?.username || 'anonymous',
-          position,
-          color: user?.color || '#3B82F6'
-        } as any);
+        // Send only position data; service will attach user metadata
+        collaborationService.sendCursorUpdate(position);
       }
     };
 
@@ -514,7 +513,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
       // Update invitation status in database
       await api.put(`/invitations/${invitation.id}`, { status: 'accepted' });
 
-      // Build the new member object directly from the invitation payload
+      // Build new member (invitee)
       const newMember = {
         id: invitation.id,
         username: invitation.inviteeUsername,
@@ -523,14 +522,28 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
         invitedBy: invitation.inviterUsername
       };
 
-      // Persist in local schema while keeping previous owners/ members
+      // Build owner (inviter) entry if missing
+      const ownerMember = {
+        id: `owner_${invitation.inviterUsername}`,
+        username: invitation.inviterUsername,
+        role: 'owner' as const,
+        joinedAt: new Date(invitation.createdAt ?? Date.now())
+      };
+
       setCurrentSchema(prev => {
-        if (prev.members.some(m => m.username === newMember.username)) {
-          return prev;
+        const updatedMembers = [...prev.members];
+
+        if (!updatedMembers.some(m => m.username === ownerMember.username)) {
+          updatedMembers.push(ownerMember);
         }
+
+        if (!updatedMembers.some(m => m.username === newMember.username)) {
+          updatedMembers.push(newMember);
+        }
+
         return {
           ...prev,
-          members: [...prev.members, newMember],
+          members: updatedMembers,
           isShared: true,
           updatedAt: new Date()
         };
@@ -648,13 +661,11 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
   const broadcastCursorPosition = (x: number, y: number, selection?: any) => {
     if (isConnected && collaborationService.isConnectedState()) {
       collaborationService.sendCursorUpdate({
-        userId: user?.id || 'current_user',
-        username: user?.username || 'anonymous',
-        position: { x, y },
-        color: user?.color || '#3B82F6',
+        x,
+        y,
         tableId: selection?.tableId,
         columnId: selection?.columnId
-      } as any);
+      });
     }
   };
   
