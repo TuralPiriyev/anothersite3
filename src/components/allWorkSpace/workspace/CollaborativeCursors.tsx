@@ -35,30 +35,63 @@ const CollaborativeCursors: React.FC<CollaborativeCursorsProps> = ({
     return () => document.removeEventListener('mousemove', handleMouseMove);
   }, [onCursorMove]);
 
-  // Filter out stale cursors (older than 30 seconds)
+  // Filter out stale cursors (older than 30 seconds) and duplicates
   const activeCursors = cursors.filter(cursor => {
     const lastSeenTime = cursor.lastSeen instanceof Date ? 
       cursor.lastSeen.getTime() : 
       new Date(cursor.lastSeen).getTime();
     const now = Date.now();
-    return (now - lastSeenTime) < 30000; // 30 seconds
+    const isRecent = (now - lastSeenTime) < 30000; // 30 seconds
+    
+    // Additional validation
+    const isValid = cursor.userId && 
+                   cursor.username && 
+                   cursor.position && 
+                   typeof cursor.position.x === 'number' && 
+                   typeof cursor.position.y === 'number' &&
+                   !isNaN(cursor.position.x) && 
+                   !isNaN(cursor.position.y);
+    
+    return isRecent && isValid;
   });
+
+  // Remove duplicate cursors by userId
+  const uniqueCursors = activeCursors.reduce((acc, cursor) => {
+    const existing = acc.find(c => c.userId === cursor.userId);
+    if (!existing) {
+      acc.push(cursor);
+    } else {
+      // Update existing cursor if new one is more recent
+      const existingTime = existing.lastSeen instanceof Date ? 
+        existing.lastSeen.getTime() : 
+        new Date(existing.lastSeen).getTime();
+      const newTime = cursor.lastSeen instanceof Date ? 
+        cursor.lastSeen.getTime() : 
+        new Date(cursor.lastSeen).getTime();
+      
+      if (newTime > existingTime) {
+        const index = acc.findIndex(c => c.userId === cursor.userId);
+        acc[index] = cursor;
+      }
+    }
+    return acc;
+  }, [] as CursorData[]);
 
   // Debug log for cursor visibility
   useEffect(() => {
-    if (activeCursors.length > 0) {
-      console.log('🎯 Rendering cursors:', activeCursors.map(c => ({
+    if (uniqueCursors.length > 0) {
+      console.log('🎯 Rendering unique cursors:', uniqueCursors.map(c => ({
         userId: c.userId,
         username: c.username,
         position: c.position,
         color: c.color
       })));
     }
-  }, [activeCursors]);
+  }, [uniqueCursors]);
 
   return (
     <div className="fixed inset-0 pointer-events-none z-[9999]">
-      {activeCursors.map(cursor => {
+      {uniqueCursors.map(cursor => {
         // Ensure valid position before rendering with better validation
         const x = typeof cursor.position?.x === 'number' && !isNaN(cursor.position.x) ? cursor.position.x : 0;
         const y = typeof cursor.position?.y === 'number' && !isNaN(cursor.position.y) ? cursor.position.y : 0;
