@@ -33,7 +33,6 @@ function broadcastToSchema(schemaId, message, excludeUserId = null) {
 
   const messageStr = JSON.stringify(message);
   console.log(`📤 Broadcasting to schema ${schemaId}:`, message.type, `(${schemaConnections.size} connections)`);
-  console.log(`📤 Message being sent: ${messageStr}`);
 
   schemaConnections.forEach(ws => {
     if (ws.readyState === 1 && ws.userId !== excludeUserId) { // 1 = OPEN
@@ -172,35 +171,9 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
               data: cursorData
             }, message.cursor.userId);
             
-            console.log(`📍 Enhanced cursor update from ${cursorData.username} (${cursorData.userId}) broadcasted to schema ${schemaId}`);
-            console.log(`📍 Cursor position: (${cursorData.position.x}, ${cursorData.position.y})`);
+            console.log(`📍 Cursor update from ${cursorData.username} (${cursorData.userId}) broadcasted to schema ${schemaId}`);
           } else {
-            console.warn('⚠️ Invalid cursor_update message received:', {
-              hasCursor: !!message.cursor,
-              cursorType: typeof message.cursor,
-              hasUserId: !!message.cursor?.userId,
-              userIdType: typeof message.cursor?.userId,
-              hasPosition: !!message.cursor?.position,
-              positionType: typeof message.cursor?.position,
-              hasValidPosition: !!(message.cursor?.position && 
-                typeof message.cursor.position.x === 'number' && 
-                typeof message.cursor.position.y === 'number'),
-              fullMessage: message
-            });
-            
-            // Send detailed error response to sender only
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: 'Invalid cursor_update format. Expected cursor object with userId and valid position {x, y}.',
-              details: {
-                required: ['cursor.userId (string)', 'cursor.position.x (number)', 'cursor.position.y (number)'],
-                received: {
-                  hasUserId: !!message.cursor?.userId,
-                  hasPosition: !!message.cursor?.position,
-                  positionKeys: message.cursor?.position ? Object.keys(message.cursor.position) : []
-                }
-              }
-            }));
+            console.warn('⚠️ Invalid cursor_update message received:', message);
           }
           break;
           
@@ -243,6 +216,15 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
             type: 'presence_update',
             data: message.data
           }, message.data?.userId);
+          break;
+          
+        case 'member_added':
+          // Broadcast member addition to all users
+          broadcastToSchema(schemaId, {
+            type: 'member_added',
+            data: message.data
+          });
+          console.log('👥 Member added:', message.data?.member?.username);
           break;
           
         case 'ping':

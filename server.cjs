@@ -480,6 +480,34 @@ app.post('/api/members', authenticate, async (req, res) => {
     const m = new Member(memberData);
     await m.save();
     console.log('Member saved successfully:', m._id);
+    
+    // Broadcast member addition to all connected users in the workspace
+    const schemaConnections = connections.get(workspaceId);
+    if (schemaConnections) {
+      const memberAdditionMessage = {
+        type: 'member_added',
+        data: {
+          member: {
+            id: m.id,
+            username: m.username,
+            role: m.role,
+            joinedAt: m.joinedAt
+          }
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      schemaConnections.forEach(ws => {
+        if (ws.readyState === 1) { // 1 = OPEN
+          try {
+            ws.send(JSON.stringify(memberAdditionMessage));
+          } catch (error) {
+            console.error('Error sending member addition message:', error);
+          }
+        }
+      });
+    }
+    
     res.status(201).json({
       id: m._id,
       workspaceId: m.workspaceId,

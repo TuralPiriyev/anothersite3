@@ -83,6 +83,13 @@ const MainLayout: React.FC = () => {
           setIsCollaborationConnected(data.connected);
           break;
           
+        case 'member_added':
+          // Handle member addition
+          if (data && data.member) {
+            console.log('👥 Member added in MainLayout:', data.member.username);
+          }
+          break;
+          
         case 'workspace_sync':
           // Handle complete workspace synchronization
           if (data && data.schema) {
@@ -112,9 +119,9 @@ const MainLayout: React.FC = () => {
   const toggleLeftCollapse = () => setLeftPanelCollapsed(p => !p);
   const toggleRightCollapse = () => setRightPanelCollapsed(p => !p);
 
-  // Cursor move broadcast - now handled via collaboration events
+  // Enhanced cursor move broadcast - now sends cursor updates for all users
   const handleCursorMove = (pos: { x: number; y: number; tableId?: string; columnId?: string }) => {
-    // Only broadcast if collaboration is connected and we have a valid position
+    // Always broadcast cursor position if collaboration is connected
     if (isCollaborationConnected && 
         pos && 
         typeof pos.x === 'number' && 
@@ -126,6 +133,30 @@ const MainLayout: React.FC = () => {
       }));
     }
   };
+
+  // Add global mouse move listener to track cursor position
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (isCollaborationConnected) {
+        const position = {
+          x: e.clientX,
+          y: e.clientY
+        };
+        
+        // Dispatch cursor move event
+        window.dispatchEvent(new CustomEvent('cursor-move', {
+          detail: { position }
+        }));
+      }
+    };
+
+    // Add global mouse move listener
+    document.addEventListener('mousemove', handleGlobalMouseMove);
+
+    return () => {
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+    };
+  }, [isCollaborationConnected]);
   
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200 relative">
@@ -203,27 +234,16 @@ const MainLayout: React.FC = () => {
               )}
             </button>
           </div>
-          
-          <div className="lg:hidden absolute top-4 right-4">
-            <button
-              onClick={() => setLeftPanelOpen(false)}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-              aria-label="Close tools panel"
-            >
-              <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-            </button>
-          </div>
-          
-          {/* Tools Panel Content */}
+
           <ToolsPanel collapsed={leftPanelCollapsed} />
         </div>
 
-        {/* Center Panel - Workspace */}
-        <div className="flex-1 lg:w-3/5">
+        {/* Main Workspace Area */}
+        <div className="flex-1 flex flex-col relative">
           <WorkspacePanel />
         </div>
 
-        {/* Right Panel - Portfolio & Chat */}
+        {/* Right Panel - Portfolio */}
         <div className={`
           fixed inset-y-0 right-0 z-40 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 transform transition-all duration-300 ease-in-out shadow-xl
           lg:relative lg:translate-x-0 lg:shadow-none
@@ -244,29 +264,9 @@ const MainLayout: React.FC = () => {
               )}
             </button>
           </div>
-          
-          <div className="lg:hidden absolute top-4 left-4">
-            <button
-              onClick={() => setRightPanelOpen(false)}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-200"
-              aria-label="Close portfolio panel"
-            >
-              <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-            </button>
-          </div>
+
           <PortfolioPanel collapsed={rightPanelCollapsed} />
         </div>
-
-        {/* Mobile Overlays */}
-        {(leftPanelOpen || rightPanelOpen) && (
-          <div 
-            className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 backdrop-blur-sm"
-            onClick={() => {
-              setLeftPanelOpen(false);
-              setRightPanelOpen(false);
-            }}
-          />
-        )}
       </div>
     </div>
   );

@@ -46,17 +46,17 @@ const CollaborationBridge: React.FC = () => {
       setCurrentSchema(prev => {
         const exists = prev.members.some(m => m.username === userData.username);
         if (exists) return prev;
+        
+        const newMember = {
+          id: userData.id || userData.userId || userData.username,
+          username: userData.username,
+          role: userData.role || 'editor',
+          joinedAt: new Date()
+        };
+        
         return {
           ...prev,
-          members: [
-            ...prev.members,
-            {
-              id: userData.id || userData.userId || userData.username,
-              username: userData.username,
-              role: userData.role || 'editor',
-              joinedAt: new Date()
-            }
-          ],
+          members: [...prev.members, newMember],
           isShared: true,
           updatedAt: new Date()
         };
