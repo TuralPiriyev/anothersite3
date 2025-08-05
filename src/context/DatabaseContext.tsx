@@ -478,7 +478,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         updatedAt: new Date()
       }));
       
-      // Add new member to local state
+      // Add new member and switch workspace id to the inviter's workspace
       const newMember: WorkspaceMember = {
         id: uuidv4(),
         username: invitation.inviteeUsername,
@@ -487,9 +487,10 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         expiresAt: memberExpiresAt,
         invitedBy: invitation.inviterUsername
       };
-      
+
       setCurrentSchema(prev => ({
         ...prev,
+        id: invitation.workspaceId, // ensures both users share same schema id
         members: [...prev.members, newMember],
         isShared: true,
         updatedAt: new Date()

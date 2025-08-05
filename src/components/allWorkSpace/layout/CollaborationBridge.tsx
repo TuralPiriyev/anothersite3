@@ -10,7 +10,7 @@ import { collaborationService, CollaborationUser } from '../../../services/colla
  * `collaboration-event` CustomEvent bus.
  */
 const CollaborationBridge: React.FC = () => {
-  const { currentSchema } = useDatabase();
+  const { currentSchema, setCurrentSchema } = useDatabase();
   const { user } = useAuth();
   const { currentPlan } = useSubscription();
 
@@ -41,8 +41,32 @@ const CollaborationBridge: React.FC = () => {
     const handleConn   = () => relay('connection_status', { connected: true });
     const handleDisc   = () => relay('connection_status', { connected: false });
 
+    const handleJoin   = (userData: any) => {
+      // Ensure DatabaseContext members list stays in sync
+      setCurrentSchema(prev => {
+        const exists = prev.members.some(m => m.username === userData.username);
+        if (exists) return prev;
+        return {
+          ...prev,
+          members: [
+            ...prev.members,
+            {
+              id: userData.id || userData.userId || userData.username,
+              username: userData.username,
+              role: userData.role || 'editor',
+              joinedAt: new Date()
+            }
+          ],
+          isShared: true,
+          updatedAt: new Date()
+        };
+      });
+      relay('user_joined', userData);
+    };
+
     collaborationService.on('cursor_update', handleCursor);
     collaborationService.on('user_left', handleLeft);
+    collaborationService.on('user_joined', handleJoin);
     collaborationService.on('connected', handleConn);
     collaborationService.on('disconnected', handleDisc);
 
@@ -58,6 +82,7 @@ const CollaborationBridge: React.FC = () => {
     return () => {
       collaborationService.off('cursor_update', handleCursor);
       collaborationService.off('user_left', handleLeft);
+      collaborationService.off('user_joined', handleJoin);
       collaborationService.off('connected', handleConn);
       collaborationService.off('disconnected', handleDisc);
       window.removeEventListener('cursor-move', localMoveListener as EventListener);
