@@ -443,7 +443,7 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
             joinCode: joinCode,
             createdAt: new Date(),
             expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            status: 'pending' as 'pending' | 'accepted' | 'expired'
+            status: 'pending' as const
           };
           
           return {
