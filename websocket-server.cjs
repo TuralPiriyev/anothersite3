@@ -146,32 +146,22 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
           break;
           
         case 'cursor_update':
-          // Enhanced validation for cursor data before broadcasting
           if (message.cursor && 
               typeof message.cursor === 'object' && 
               message.cursor.userId && 
-              typeof message.cursor.userId === 'string' &&
-              message.cursor.position &&
-              typeof message.cursor.position === 'object' &&
-              typeof message.cursor.position.x === 'number' &&
-              typeof message.cursor.position.y === 'number') {
+              typeof message.cursor.userId === 'string') {
             
-            // Add timestamp and ensure all required fields
             const cursorData = {
               ...message.cursor,
-              timestamp: new Date().toISOString(),
-              username: message.cursor.username || 'Unknown User',
-              color: message.cursor.color || '#3B82F6',
-              lastSeen: new Date().toISOString()
+              timestamp: new Date().toISOString()
             };
             
-            // Broadcast cursor position to other users with enhanced data structure
             broadcastToSchema(schemaId, {
               type: 'cursor_update',
               data: cursorData
             }, message.cursor.userId);
             
-            console.log(`📍 Cursor update from ${cursorData.username} (${cursorData.userId}) broadcasted to schema ${schemaId}`);
+            console.log(`📍 Cursor update from ${message.cursor.username || message.cursor.userId} broadcasted`);
           } else {
             console.warn('⚠️ Invalid cursor_update message received:', message);
           }

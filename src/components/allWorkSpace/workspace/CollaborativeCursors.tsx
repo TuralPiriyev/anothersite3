@@ -59,17 +59,8 @@ const CollaborativeCursors: React.FC<CollaborativeCursorsProps> = ({
   return (
     <div className="fixed inset-0 pointer-events-none z-[9999]">
       {activeCursors.map(cursor => {
-        // Ensure valid position before rendering with better validation
         const x = typeof cursor.position?.x === 'number' && !isNaN(cursor.position.x) ? cursor.position.x : 0;
         const y = typeof cursor.position?.y === 'number' && !isNaN(cursor.position.y) ? cursor.position.y : 0;
-        
-        // More lenient position validation - allow cursors near screen edges
-        if (x < -50 || y < -50 || x > window.innerWidth + 50 || y > window.innerHeight + 50) {
-          console.warn('⚠️ Cursor position out of reasonable bounds:', { userId: cursor.userId, x, y });
-          return null;
-        }
-
-        console.log('🎯 Rendering cursor for user:', cursor.userId, 'at position:', { x, y });
 
         return (
           <div
@@ -82,54 +73,22 @@ const CollaborativeCursors: React.FC<CollaborativeCursorsProps> = ({
               zIndex: 9999
             }}
           >
-            {/* Cursor Icon with enhanced visibility */}
-            <div className="relative">
-              <MousePointer 
-                className="w-5 h-5 drop-shadow-lg filter"
-                style={{ 
-                  color: cursor.color,
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-                }}
-              />
-              
-              {/* Username Label with better contrast */}
-              <div 
-                className="absolute top-6 left-2 px-2 py-1 rounded text-xs font-medium text-white shadow-lg whitespace-nowrap max-w-32 truncate border border-white/20"
-                style={{ 
-                  backgroundColor: cursor.color,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-                }}
-              >
-                {cursor.username || 'Anonymous'}
-                {cursor.selection && (
-                  <span className="ml-1 opacity-75">
-                    editing {cursor.selection.tableId}
-                  </span>
-                )}
-              </div>
+            <MousePointer 
+              className="w-5 h-5 drop-shadow-lg filter"
+              style={{ 
+                color: cursor.color,
+                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+              }}
+            />
+            <div 
+              className="absolute top-6 left-2 px-2 py-1 rounded text-xs font-medium text-white shadow-lg whitespace-nowrap max-w-32 truncate border border-white/20"
+              style={{ 
+                backgroundColor: cursor.color,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+              }}
+            >
+              {cursor.username || 'Anonymous'}
             </div>
-
-            {/* Selection Highlight with better visibility */}
-            {cursor.selection && (
-              <div 
-                className="absolute w-3 h-3 rounded-full animate-pulse border border-white/50"
-                style={{ 
-                  backgroundColor: cursor.color,
-                  top: -6,
-                  left: -6,
-                  boxShadow: '0 0 8px rgba(0,0,0,0.3)'
-                }}
-              />
-            )}
-
-            {/* Debug indicator - remove in production */}
-            {import.meta.env.DEV && (
-              <div 
-                className="absolute w-1 h-1 bg-red-500 rounded-full"
-                style={{ top: 0, left: 0 }}
-                title={`Debug: ${cursor.userId} at ${x},${y}`}
-              />
-            )}
           </div>
         );
       })}
