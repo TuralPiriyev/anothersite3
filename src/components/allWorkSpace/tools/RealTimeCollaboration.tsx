@@ -639,6 +639,24 @@ const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStat
       case 'relationship_added':
         // Handle relationship changes
         break;
+      case 'member_added':
+        if (data && data.member) {
+          const member = data.member;
+          setCurrentSchema(prev => {
+            if (prev.members.some(m => m.username === member.username)) return prev;
+            return { ...prev, members: [...prev.members, member], updatedAt: new Date(), isShared: true };
+          });
+        }
+        break;
+      case 'member_removed':
+        if (data && data.memberId) {
+          setCurrentSchema(prev => ({
+            ...prev,
+            members: prev.members.filter(m => m.id !== data.memberId),
+            updatedAt: new Date()
+          }));
+        }
+        break;
     }
     
     // Sync with MongoDB
